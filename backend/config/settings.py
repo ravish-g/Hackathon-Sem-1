@@ -55,6 +55,7 @@ MEDIA_URL = "/media/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 ASGI_THREADS = int(os.getenv("ASGI_THREADS", "4"))
 WORKER_INGEST_TOKEN = os.getenv("WORKER_INGEST_TOKEN", "")
+ALLOW_LOCAL_ANONYMOUS = os.getenv("ALLOW_LOCAL_ANONYMOUS", "false").lower() == "true"
 METRIC_STALE_SECONDS = int(os.getenv("METRIC_STALE_SECONDS", "15"))
 CRITICAL_RECOVERY_SECONDS = int(os.getenv("CRITICAL_RECOVERY_SECONDS", "30"))
 

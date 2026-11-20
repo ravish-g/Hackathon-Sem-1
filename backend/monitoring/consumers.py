@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.conf import settings
 from django.db.models import Max
 
 from backend.monitoring.contracts import event_envelope
@@ -27,7 +28,8 @@ class DashboardConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         user = self.scope.get("user")
-        if user is None or not getattr(user, "is_authenticated", False):
+        local_demo = settings.DEBUG and getattr(settings, "ALLOW_LOCAL_ANONYMOUS", False)
+        if (user is None or not getattr(user, "is_authenticated", False)) and not local_demo:
             await self.close(code=4403)
             return
 
@@ -92,7 +94,7 @@ class DashboardConsumer(AsyncJsonWebsocketConsumer):
         for feed in Feed.objects.all().prefetch_related("metrics"):
             latest = feed.metrics.order_by("-sequence").first()
             feeds.append({
-                "id": str(feed.id),
+                "feed_id": str(feed.id),
                 "name": feed.name,
                 "location": feed.location,
                 "source_type": feed.source_type,

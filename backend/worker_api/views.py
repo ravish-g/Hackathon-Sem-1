@@ -32,7 +32,11 @@ def _load_telemetry_processor():
     processor = getattr(telemetry, "telemetry_processor", None)
     if processor is None:
         processor_class = getattr(telemetry, "TelemetryProcessor", None)
-        processor = processor_class() if processor_class else None
+        publisher = None
+        if processor_class:
+            publisher_module = import_module("backend.monitoring.services.publisher")
+            publisher = getattr(publisher_module, "event_publisher", None)
+            processor = processor_class(publisher=publisher)
     return processor
 
 
@@ -64,7 +68,14 @@ def telemetry(request):
             "The authoritative telemetry processor is unavailable.",
             http_status=503,
         )
-    processor.accept(data)
+    result = processor.accept(data)
+    authoritative_metric = result.get("metric") if isinstance(result, dict) else None
+    if authoritative_metric is not None:
+        return Response({
+            "accepted": True,
+            "feed_id": str(feed.id),
+            "sequence": authoritative_metric.sequence,
+        }, status=201)
     fields = {key: value for key, value in data.items() if key not in {"feed_id", "stream_state"}}
     try:
         with transaction.atomic():

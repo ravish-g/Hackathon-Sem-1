@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.authentication import BasicAuthentication, SessionAuthentication
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 from .enums import IncidentState, SourceType
@@ -56,9 +56,18 @@ def error(code, message, fields=None, http_status=400):
     return Response(payload, status=http_status)
 
 
+class AuthenticatedOrLocalDemo(BasePermission):
+    def has_permission(self, request, view):
+        return bool(
+            request.user and request.user.is_authenticated
+        ) or bool(
+            settings.DEBUG and getattr(settings, "ALLOW_LOCAL_ANONYMOUS", False)
+        )
+
+
 def authenticated(view):
     view.cls.authentication_classes = AUTH
-    view.cls.permission_classes = [IsAuthenticated]
+    view.cls.permission_classes = [AuthenticatedOrLocalDemo]
     return view
 
 
