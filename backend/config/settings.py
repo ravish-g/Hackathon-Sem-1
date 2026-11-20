@@ -66,3 +66,11 @@ CSRF_TRUSTED_ORIGINS = [
 METRIC_STALE_SECONDS = int(os.getenv("METRIC_STALE_SECONDS", "15"))
 CRITICAL_RECOVERY_SECONDS = int(os.getenv("CRITICAL_RECOVERY_SECONDS", "30"))
 
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_CONTENT_NEGOTIATION_CLASS":
+        "backend.config.negotiation.IgnoreClientContentNegotiation",
+}
+

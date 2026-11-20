@@ -78,6 +78,14 @@ def test_dashboard_restores_active_incident_after_refresh(api, feed):
 
 
 @pytest.mark.django_db
+def test_dashboard_returns_json_to_browser_accept_header(api):
+    response = api.get("/api/dashboard/", HTTP_ACCEPT="text/html")
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("application/json")
+    assert "feeds" in response.json()
+
+
+@pytest.mark.django_db
 def test_acknowledgement_is_idempotent_and_does_not_resolve(api, feed, operator, integration_doubles):
     incident = CriticalIncident.objects.create(feed=feed, severity=Severity.CRITICAL.value, reason="density")
     first = api.post(f"/api/incidents/{incident.incident_id}/acknowledge/", {})
