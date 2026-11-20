@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b100f">
+  <meta name="description" content="Antropy campus fest control room for camera monitoring, zone density and incident response.">
+  <title>Antropy · Control room</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="data.js"></script>
+  <script defer src="ui.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="top"><div class="top-inner">
+    <a class="brand" href="#overview" aria-label="Antropy overview"><img src="assets/mark.svg" alt="">antropy</a>
+    <nav aria-label="Primary navigation"><a href="#overview" data-nav="overview"><i data-i="grid"></i> Overview</a><a href="#events" data-nav="events"><i data-i="log"></i> Event log</a><a href="#diagnostics" data-nav="diagnostics"><i data-i="pulse"></i> Diagnostics</a></nav>
+    <div class="top-tools"><span id="connection" class="session"><b></b>Demo session</span><button class="icon-btn" id="audio" title="Enable incident sound" aria-label="Enable incident sound"><i data-i="muted"></i></button><button class="operator" data-action="settings" title="Operator settings" aria-label="Operator settings">OP</button></div>
+  </div></header>
+  <main id="app"></main>
+  <dialog id="dialog"><div id="modal"></div></dialog>
+  <div id="toast" role="status"></div><div id="announcer" class="sr" aria-live="assertive"></div>
+</body>
+</html>
