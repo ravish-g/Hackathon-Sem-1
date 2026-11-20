@@ -1,4 +1,5 @@
 import uuid
+from importlib import import_module
 from pathlib import Path
 
 from django.conf import settings
@@ -17,6 +18,34 @@ from .serializers import CalibrationSerializer, EventSerializer, FeedSerializer,
 
 
 AUTH = [SessionAuthentication, BasicAuthentication]
+_incident_engine = None
+_event_publisher = None
+
+
+def set_incident_dependencies(engine, publisher):
+    global _incident_engine, _event_publisher
+    _incident_engine = engine
+    _event_publisher = publisher
+
+
+def _load_incident_dependencies():
+    if _incident_engine is not None and _event_publisher is not None:
+        return _incident_engine, _event_publisher
+    try:
+        incidents = import_module("backend.monitoring.services.incidents")
+        publisher = import_module("backend.monitoring.services.publisher")
+    except ModuleNotFoundError as exc:
+        if not exc.name.startswith("backend.monitoring.services"):
+            raise
+        return None, None
+    engine = getattr(incidents, "incident_engine", None)
+    if engine is None:
+        engine_class = getattr(incidents, "CriticalIncidentEngine", None)
+        engine = engine_class() if engine_class else None
+    event_publisher = getattr(publisher, "event_publisher", None)
+    if engine is None or event_publisher is None:
+        return None, None
+    return engine, event_publisher
 
 
 def error(code, message, fields=None, http_status=400):
@@ -144,7 +173,7 @@ def feed_calibration(request, feed_id):
         zone=zone, version=version, source_frame_size=data["source_frame_size"],
         image_reference_points=data["image_reference_points"],
         ground_reference_points_m=data["ground_reference_points_m"],
-        homography=[], polygon_ground_m=data["ground_reference_points_m"],
+        homography=data["homography"], polygon_ground_m=data["polygon_ground_m"],
         area_m2=data["area_m2"], calibrated=True,
     )
     feed.configuration_version += 1
@@ -205,9 +234,31 @@ def acknowledge_incident(request, incident_id):
     except CriticalIncident.DoesNotExist:
         return error("NOT_FOUND", "Incident was not found.", http_status=404)
     if not incident.acknowledged:
-        incident.acknowledged = True
-        incident.acknowledged_at = timezone.now()
-        incident.acknowledged_by = request.user.get_username() or str(request.user.pk)
-        incident.save(update_fields=["acknowledged", "acknowledged_at", "acknowledged_by", "last_updated_at"])
+        engine, publisher = _load_incident_dependencies()
+        if engine is None or publisher is None:
+            return error(
+                "INCIDENT_PROVIDER_UNAVAILABLE",
+                "The authoritative incident engine and publisher are unavailable.",
+                http_status=503,
+            )
+        updated = engine.acknowledge(
+            str(incident.incident_id),
+            request.user.get_username() or str(request.user.pk),
+        )
+        if isinstance(updated, CriticalIncident):
+            incident = updated
+        else:
+            incident.refresh_from_db()
+        publisher.publish(
+            "incident.acknowledged",
+            {
+                "incident_id": str(incident.incident_id),
+                "feed_id": str(incident.feed_id),
+                "acknowledged": incident.acknowledged,
+                "acknowledged_at": incident.acknowledged_at.isoformat().replace("+00:00", "Z"),
+                "acknowledged_by": incident.acknowledged_by,
+            },
+            feed_id=str(incident.feed_id),
+        )
     return Response(IncidentSerializer(incident).data)
 

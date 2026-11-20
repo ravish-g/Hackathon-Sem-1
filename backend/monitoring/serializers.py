@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import numpy as np
 
 from .enums import SourceType, StreamState
 from .models import Calibration, CriticalIncident, EventLogEntry, Feed, FeedMetric, Zone
@@ -113,8 +114,51 @@ class CalibrationSerializer(serializers.Serializer):
         for field in ("image_reference_points", "zone_polygon_image"):
             if polygon_area(attrs[field]) <= 0:
                 raise serializers.ValidationError({field: "Points must enclose a positive area."})
-        attrs["area_m2"] = area
+        try:
+            homography = _homography(
+                attrs["image_reference_points"], attrs["ground_reference_points_m"]
+            )
+            polygon_ground = _project(homography, attrs["zone_polygon_image"])
+            transformed_area = polygon_area(polygon_ground)
+        except (np.linalg.LinAlgError, ValueError):
+            raise serializers.ValidationError(
+                {"image_reference_points": "Correspondences do not define a valid homography."}
+            )
+        if transformed_area <= 0 or not np.isfinite(transformed_area):
+            raise serializers.ValidationError(
+                {"zone_polygon_image": "The transformed zone must enclose a positive area."}
+            )
+        attrs["homography"] = homography
+        attrs["polygon_ground_m"] = polygon_ground
+        attrs["area_m2"] = transformed_area
         return attrs
+
+
+def _homography(image_points, ground_points):
+    matrix = []
+    values = []
+    for (x, y), (u, v) in zip(image_points, ground_points):
+        matrix.extend([
+            [x, y, 1, 0, 0, 0, -u * x, -u * y],
+            [0, 0, 0, x, y, 1, -v * x, -v * y],
+        ])
+        values.extend([u, v])
+    solution = np.linalg.solve(np.asarray(matrix, dtype=float), np.asarray(values, dtype=float))
+    result = np.append(solution, 1.0).reshape((3, 3))
+    if not np.isfinite(result).all():
+        raise ValueError("Homography contains non-finite values.")
+    return result.tolist()
+
+
+def _project(homography, points):
+    matrix = np.asarray(homography, dtype=float)
+    projected = []
+    for x, y in points:
+        result = matrix @ np.asarray([x, y, 1.0])
+        if result[2] == 0:
+            raise ValueError("Homography maps a point to infinity.")
+        projected.append([float(result[0] / result[2]), float(result[1] / result[2])])
+    return projected
 
 
 class IncidentSerializer(serializers.ModelSerializer):
