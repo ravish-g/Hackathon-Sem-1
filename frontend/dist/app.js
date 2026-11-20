@@ -121,12 +121,12 @@ async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outer
  if(origin){try{
    UI.adapter=new EntropyData.Django(origin,receive,setLiveStatus);
    const snap=await UI.adapter.call('/api/dashboard/');
-   switchData();UI.mode='live';snapshot(snap);UI.adapter.start();
+   UI.mode='live';snapshot(snap);UI.adapter.start();
  }catch{await startDemo();}}
  else{try{
    UI.adapter=new EntropyData.Django(location.origin,receive,setLiveStatus);
    const snap=await UI.adapter.call('/api/dashboard/');
-   switchData();UI.mode='live';snapshot(snap);localStorage.setItem('antropy-backend',location.origin);UI.adapter.start();
+   UI.mode='live';snapshot(snap);localStorage.setItem('antropy-backend',location.origin);UI.adapter.start();
  }catch{await startDemo();}}
  const route=readRoute();if(route==='overview'||!guarded(route))UI.route=route;else{history.replaceState(null,'','#overview');guard();}show();
  setInterval(()=>{if(UI.mode==='live'&&!metricTimer&&UI.route==='overview')updateMetrics();},5000);
