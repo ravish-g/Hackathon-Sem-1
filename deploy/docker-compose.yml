@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crowd_fuzion}
+      POSTGRES_USER: ${POSTGRES_USER:-crowd_fuzion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crowd_fuzion} -d ${POSTGRES_DB:-crowd_fuzion}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      DJANGO_DEBUG: "false"
+      DATABASE_URL: postgres://${POSTGRES_USER:-crowd_fuzion}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-crowd_fuzion}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      ALLOW_LOCAL_ANONYMOUS: "true"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-for-local-docker}
+      WORKER_INGEST_TOKEN: ${WORKER_INGEST_TOKEN:-local-worker-token}
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             python -m daphne -b 0.0.0.0 -p 8000 backend.config.asgi:application"
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  static_data:

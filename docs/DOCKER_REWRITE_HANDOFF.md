@@ -6,6 +6,9 @@
 - Source branch: `host-backend`
 - Source commit at branch creation: `db3099a`
 - Docker is not currently installed or available in this execution environment.
+- Docker Desktop and Docker CLI 29.9.3 have now been installed on this host.
+- Docker Engine is awaiting Windows WSL2/virtualization feature activation and reboot.
+- `docker compose config` validates the PostgreSQL/Redis/web Compose baseline.
 - Docker files must be validated on a machine with Docker Engine/Desktop before public deployment.
 - Do not claim Docker, two-feed inference, FPS or count accuracy is production-ready until startup and benchmark tests are run.
 

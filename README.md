@@ -22,3 +22,19 @@ has been measured or claimed.
 
 Copy `.env.example` to `.env` for local configuration. Never commit secrets,
 worker tokens, private source URLs or private video fixtures.
+
+## Docker baseline
+
+The `dockerize-app` branch adds PostgreSQL and Redis containers plus a Daphne web
+container. Docker Engine and Docker Desktop are required on Windows.
+
+```powershell
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+The application is available at `http://localhost:8000/` after web migrations
+and startup complete.
+
+Docker startup requires WSL2 and virtualization features on Windows 10/11.
+Docker Desktop must finish its first-engine setup before Compose can pull or
+build containers.
