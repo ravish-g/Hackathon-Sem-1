@@ -42,6 +42,15 @@ class ZoneSerializer(serializers.ModelSerializer):
 class FeedSerializer(serializers.ModelSerializer):
     feed_id = serializers.UUIDField(source="id", read_only=True)
     latest_metric = serializers.SerializerMethodField()
+    people_count = serializers.SerializerMethodField()
+    density_people_per_m2 = serializers.SerializerMethodField()
+    density_trend = serializers.SerializerMethodField()
+    growth_rate = serializers.SerializerMethodField()
+    predicted_threshold_time = serializers.SerializerMethodField()
+    measured_fps = serializers.SerializerMethodField()
+    metric_timestamp = serializers.SerializerMethodField()
+    zone_area_m2 = serializers.SerializerMethodField()
+    calibrated = serializers.SerializerMethodField()
     zones = ZoneSerializer(many=True, read_only=True)
     source_config = serializers.DictField(write_only=True, required=False)
 
@@ -52,7 +61,9 @@ class FeedSerializer(serializers.ModelSerializer):
             "stream_state", "analysis_state", "severity", "risk_score",
             "last_metric_at", "last_frame_at", "preview_url", "preview_transport",
             "configuration_version", "state_version", "created_at", "updated_at",
-            "latest_metric", "zones",
+            "latest_metric", "people_count", "density_people_per_m2", "density_trend",
+            "growth_rate", "predicted_threshold_time", "measured_fps", "metric_timestamp",
+            "zone_area_m2", "calibrated", "zones",
         )
         read_only_fields = (
             "stream_state", "analysis_state", "severity", "risk_score", "last_metric_at",
@@ -77,6 +88,49 @@ class FeedSerializer(serializers.ModelSerializer):
     def get_latest_metric(self, obj):
         metric = obj.metrics.order_by("-sequence").first()
         return FeedMetricSerializer(metric).data if metric else None
+
+    def _latest_metric(self, obj):
+        return obj.metrics.order_by("-sequence").first()
+
+    def _latest_calibration(self, obj):
+        zone = obj.zones.filter(is_active=True).prefetch_related("calibrations").first()
+        return zone.calibrations.order_by("-version").first() if zone else None
+
+    def get_people_count(self, obj):
+        metric = self._latest_metric(obj)
+        return metric.people_count if metric else None
+
+    def get_density_people_per_m2(self, obj):
+        metric = self._latest_metric(obj)
+        return metric.density_people_per_m2 if metric else None
+
+    def get_density_trend(self, obj):
+        metric = self._latest_metric(obj)
+        return metric.density_trend if metric else None
+
+    def get_growth_rate(self, obj):
+        metric = self._latest_metric(obj)
+        return metric.growth_rate if metric else None
+
+    def get_predicted_threshold_time(self, obj):
+        metric = self._latest_metric(obj)
+        return iso(metric.predicted_threshold_time) if metric else None
+
+    def get_measured_fps(self, obj):
+        metric = self._latest_metric(obj)
+        return metric.measured_fps if metric else None
+
+    def get_metric_timestamp(self, obj):
+        metric = self._latest_metric(obj)
+        return iso(metric.captured_at) if metric else None
+
+    def get_zone_area_m2(self, obj):
+        calibration = self._latest_calibration(obj)
+        return calibration.area_m2 if calibration else None
+
+    def get_calibrated(self, obj):
+        calibration = self._latest_calibration(obj)
+        return bool(calibration and calibration.calibrated)
 
 
 class CalibrationSerializer(serializers.Serializer):

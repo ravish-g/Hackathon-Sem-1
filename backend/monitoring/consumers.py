@@ -12,6 +12,7 @@ from django.db.models import Max
 
 from backend.monitoring.contracts import event_envelope
 from backend.monitoring.models import CriticalIncident, EventLogEntry, Feed
+from backend.monitoring.serializers import FeedSerializer
 from backend.monitoring.services.publisher import DASHBOARD_GROUP, get_event_publisher
 
 
@@ -92,30 +93,9 @@ class DashboardConsumer(AsyncJsonWebsocketConsumer):
         cursor = EventLogEntry.objects.aggregate(value=Max("sequence"))["value"] or 0
         feeds = []
         for feed in Feed.objects.all().prefetch_related("metrics"):
-            latest = feed.metrics.order_by("-sequence").first()
-            feeds.append({
-                "feed_id": str(feed.id),
-                "name": feed.name,
-                "location": feed.location,
-                "source_type": feed.source_type,
-                "stream_state": feed.stream_state,
-                "analysis_state": feed.analysis_state,
-                "severity": feed.severity,
-                "risk_score": feed.risk_score,
-                "last_metric_at": _utc(feed.last_metric_at),
-                "last_frame_at": _utc(feed.last_frame_at),
-                "latest_metrics": None if latest is None else {
-                    "sequence": latest.sequence,
-                    "captured_at": _utc(latest.captured_at),
-                    "people_count": latest.people_count,
-                    "density_people_per_m2": latest.density_people_per_m2,
-                    "density_trend": latest.density_trend,
-                    "growth_rate": latest.growth_rate,
-                    "measured_fps": latest.measured_fps,
-                    "inference_ms": latest.inference_ms,
-                    "is_valid": latest.is_valid,
-                },
-            })
+            feed_data = FeedSerializer(feed).data
+            feed_data["latest_metrics"] = feed_data.get("latest_metric")
+            feeds.append(feed_data)
 
         active = []
         for incident in CriticalIncident.objects.filter(state="active").select_related(

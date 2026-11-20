@@ -91,7 +91,16 @@ def dashboard(request):
 def feeds(request):
     if request.method == "GET":
         return Response({"results": [feed_data(feed) for feed in feed_queryset()]})
-    serializer = FeedSerializer(data=request.data)
+    payload = request.data.copy()
+    if "source_config" not in payload:
+        source_config = {}
+        if payload.get("source_url"):
+            source_config["url"] = payload["source_url"]
+        if payload.get("device_index") is not None:
+            source_config["device_index"] = payload["device_index"]
+        if source_config:
+            payload["source_config"] = source_config
+    serializer = FeedSerializer(data=payload)
     if not serializer.is_valid():
         return error("VALIDATION_ERROR", "Feed data is invalid.", serializer.errors)
     feed = serializer.save()
@@ -167,7 +176,31 @@ def feed_calibration(request, feed_id):
         feed = Feed.objects.get(id=feed_id)
     except Feed.DoesNotExist:
         return error("NOT_FOUND", "Feed was not found.", http_status=404)
-    serializer = CalibrationSerializer(data=request.data)
+    payload = request.data.copy()
+    if "reference_points" in payload:
+        try:
+            points = payload["reference_points"]
+            width = float(payload["width_m"])
+            length = float(payload["length_m"])
+        except (KeyError, TypeError, ValueError):
+            return error("CALIBRATION_INVALID", "Normalized points and dimensions are required.", http_status=422)
+        zone = feed.zones.filter(is_active=True).first()
+        if zone is None:
+            zone = Zone.objects.create(
+                feed=feed,
+                name=f"{feed.name} monitored zone",
+                polygon_image=points,
+            )
+        payload = {
+            "zone_id": str(zone.id),
+            "source_frame_size": {"width": 1, "height": 1},
+            "image_reference_points": points,
+            "ground_reference_points_m": [[0, 0], [width, 0], [width, length], [0, length]],
+            "zone_polygon_image": points,
+        }
+        if request.data.get("expected_configuration_version") is not None:
+            payload["expected_configuration_version"] = request.data["expected_configuration_version"]
+    serializer = CalibrationSerializer(data=payload)
     if not serializer.is_valid():
         return error("CALIBRATION_INVALID", "Calibration data is invalid.", serializer.errors, 422)
     data = serializer.validated_data
@@ -189,11 +222,14 @@ def feed_calibration(request, feed_id):
     feed.configuration_version += 1
     feed.analysis_state = "active"
     feed.save(update_fields=["configuration_version", "analysis_state", "updated_at"])
-    return Response({
+    response = {
         "calibrated": calibration.calibrated, "area_m2": calibration.area_m2,
+        "zone_area_m2": calibration.area_m2,
         "calibration_version": calibration.version, "zone_id": str(zone.id),
         "configuration_version": feed.configuration_version, "warnings": [],
-    })
+    }
+    response["feed"] = feed_data(feed)
+    return Response(response)
 
 
 @authenticated
