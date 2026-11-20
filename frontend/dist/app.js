@@ -79,11 +79,15 @@ function calibration(f){
  eventLog(f.feed_id,'info','Zone geometry saved',`${fmt(payload.zone_area_m2,2)} m² measured ground area.`,'calibration');dialog.close();show();toast('Zone geometry saved. Awaiting measurements.');});
 }
 function paintPoints(syncInput=true){$('#cal-overlay').innerHTML=`<polygon points="${calPoints.map(p=>p.map(v=>v*100).join(',')).join(' ')}" fill="#abef8338" stroke="#b5f48a" stroke-width=".5"/>${calPoints.map(([x,y],i)=>`<circle cx="${x*100}" cy="${y*100}" r="1.5" fill="#bbf792"/><text x="${x*100+2}" y="${y*100}" fill="white" font-size="4">${i+1}</text>`).join('')}`;if(syncInput)$('#coordinates').value=calPoints.map(p=>p.map(v=>v.toFixed(3)).join(',')).join(' ');$('#point-count').textContent=calPoints.length+' of 4 corners selected';}
-function settings(){open('Connection settings',`<form id="settings-form" class="form">${field('Monitoring source',`<select name="mode"><option value="demo">Demo workspace</option><option value="live">Live Django backend</option></select>`)}<div id="connection-fields"></div>${footer('Apply settings')}</form>`);const form=$('#settings-form');form.mode.value=UI.mode;
- const update=()=>{$('#connection-fields').innerHTML=form.mode.value==='live'?`<div class="form">${field('Backend origin',`<input type="url" name="origin" value="${esc(UI.adapter?.base||'')}" placeholder="https://monitor.example.edu" required>`)}<p class="subtle">Uses the dashboard REST snapshot and Django Channels event stream. The host must allow this origin and your signed-in session.</p></div>`:'<p class="note">Four sample camera frames illustrate a campus fest. Uploaded videos and webcam previews stay in this browser session.</p>';};update();form.mode.onchange=update;
- submitHandler(form,async()=>{if(form.mode.value==='demo'){if(UI.mode!=='demo'){localStorage.removeItem('antropy-backend');await startDemo();}dialog.close();return;}
- const adapter=new EntropyData.Django(form.origin.value,receive,setLiveStatus);let snap=await adapter.call('/api/dashboard/');if(!Array.isArray(snap.feeds))throw Error('The server must return a dashboard snapshot with a feeds array.');if(!Array.isArray(snap.incidents)&&!Array.isArray(snap.active_incidents))snap.incidents=await adapter.call('/api/incidents/active/');
- switchData();UI.mode='live';UI.adapter=adapter;snapshot(snap);localStorage.setItem('antropy-backend',adapter.base);dialog.close();UI.route='overview';history.replaceState(null,'','#overview');adapter.start();show();});}
+function settings(){open('Connection settings',`<form id="settings-form" class="form"><div class="form">${field('Backend origin',`<input type="url" name="origin" value="${esc(location.origin)}" required>`)}<p class="subtle">Live Django dashboard and Django Channels event stream.</p></div>${footer('Reconnect')}</form>`);
+ const form=$('#settings-form');
+ submitHandler(form,async()=>{
+   const adapter=new EntropyData.Django(form.origin.value,receive,setLiveStatus);
+   let snap=await adapter.call('/api/dashboard/');
+   if(!Array.isArray(snap.feeds))throw Error('The server must return a dashboard snapshot with a feeds array.');
+   if(!Array.isArray(snap.incidents)&&!Array.isArray(snap.active_incidents))snap.incidents=await adapter.call('/api/incidents/active/');
+   switchData();UI.mode='live';UI.adapter=adapter;snapshot(snap);localStorage.setItem('antropy-backend',adapter.base);dialog.close();UI.route='overview';history.replaceState(null,'','#overview');adapter.start();show();
+ });}
 function setLiveStatus(s){setStatus(s);show();}
 function updateMetrics(){metricTimer=null;if(UI.route.startsWith('feed/')){const f=UI.feeds.get(UI.route.slice(5));if(!f)return;const frame=$('.detail-frame');if(!frame)return;
  const metrics=frame.parentElement.querySelector('.details-grid');
@@ -116,18 +120,16 @@ document.addEventListener('error',e=>{const id=e.target.dataset?.media,f=UI.feed
 document.addEventListener('loadeddata',e=>{const f=UI.feeds.get(e.target.dataset?.media);if(f&&UI.mode==='demo'&&f.stream_state==='connecting'){f.stream_state='live';if(!metricTimer)metricTimer=setTimeout(updateMetrics,100);}},true);
 window.addEventListener('hashchange',navigate);
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a)return;const dest=decodeURIComponent(a.hash.slice(1));if(dest!==UI.route&&guarded(dest)){e.preventDefault();guard();}else if(dialog.open)dialog.close();});
-async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outerHTML=icon(el.dataset.i));if('BroadcastChannel' in window){channel=new BroadcastChannel('entropy-demo');channel.onmessage=e=>{if(UI.mode==='demo'){applyDemoRecord(e.data);show();}};}
- let origin;try{origin=localStorage.getItem('antropy-backend');}catch{}
- if(origin){try{
-   UI.adapter=new EntropyData.Django(origin,receive,setLiveStatus);
-   const snap=await UI.adapter.call('/api/dashboard/');
-   UI.mode='live';snapshot(snap);UI.adapter.start();
- }catch{await startDemo();}}
- else{try{
+async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outerHTML=icon(el.dataset.i));UI.mode='live';
+ try{
    UI.adapter=new EntropyData.Django(location.origin,receive,setLiveStatus);
    const snap=await UI.adapter.call('/api/dashboard/');
-   UI.mode='live';snapshot(snap);localStorage.setItem('antropy-backend',location.origin);UI.adapter.start();
- }catch{await startDemo();}}
+   snapshot(snap);localStorage.setItem('antropy-backend',location.origin);UI.adapter.start();
+ }catch(error){
+   setStatus('Disconnected');
+   snapshot({feeds:[],active_incidents:[],events:[]});
+   toast(error.message);
+ }
  const route=readRoute();if(route==='overview'||!guarded(route))UI.route=route;else{history.replaceState(null,'','#overview');guard();}show();
  setInterval(()=>{if(UI.mode==='live'&&!metricTimer&&UI.route==='overview')updateMetrics();},5000);
 }
