@@ -1,8 +1,8 @@
 from django.urls import path
 
-from backend.monitoring.urls import foundation_not_implemented
+from .views import telemetry, worker_heartbeat
 
 urlpatterns = [
-    path("telemetry/", foundation_not_implemented, name="worker-telemetry"),
-    path("worker-heartbeat/", foundation_not_implemented, name="worker-heartbeat"),
+    path("telemetry/", telemetry, name="worker-telemetry"),
+    path("worker-heartbeat/", worker_heartbeat, name="worker-heartbeat"),
 ]
