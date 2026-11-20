@@ -62,7 +62,7 @@ class TelemetryPublisher:
             return False
         headers = {"Content-Type": "application/json"}
         if self.worker_token:
-            headers["Authorization"] = f"Bearer {self.worker_token}"
+            headers["X-Worker-Token"] = self.worker_token
         try:
             response = requests.post(self.url, json=payload, headers=headers, timeout=2.0)
             return 200 <= response.status_code < 300
