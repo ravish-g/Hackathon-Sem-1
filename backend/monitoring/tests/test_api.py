@@ -189,3 +189,23 @@ def test_upload_validation_rejects_unsafe_and_too_large_files(api):
     assert api.post("/api/feeds/upload/", {"file": unsafe}, format="multipart").status_code == 415
     oversized = SimpleUploadedFile("clip.mp4", b"\x00" * 21, content_type="video/mp4")
     assert api.post("/api/feeds/upload/", {"file": oversized}, format="multipart").status_code == 413
+
+
+@pytest.mark.django_db
+def test_upload_creates_playable_preview(api):
+    mp4 = SimpleUploadedFile(
+        "clip.mp4",
+        b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom",
+        content_type="video/mp4",
+    )
+    response = api.post(
+        "/api/feeds/upload/",
+        {"file": mp4, "name": "Lobby", "location": "Main hall"},
+        format="multipart",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["source_type"] == "upload"
+    assert data["stream_state"] == "replay"
+    assert data["preview_transport"] == "video"
+    assert data["preview_url"].startswith("/media/feeds/")

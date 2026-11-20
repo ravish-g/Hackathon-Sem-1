@@ -142,7 +142,13 @@ def feed_upload(request):
         for chunk in upload.chunks():
             target.write(chunk)
     data = {"name": request.data.get("name") or Path(upload.name).stem, "location": request.data.get("location", ""), "source_type": SourceType.UPLOAD.value}
-    feed = Feed.objects.create(**data, source_config={"stored_name": stored_name})
+    feed = Feed.objects.create(
+        **data,
+        source_config={"stored_name": stored_name},
+        stream_state="replay",
+        preview_url=f"{settings.MEDIA_URL}feeds/{stored_name}",
+        preview_transport="video",
+    )
     return Response(feed_data(feed), status=status.HTTP_201_CREATED)
 
 
