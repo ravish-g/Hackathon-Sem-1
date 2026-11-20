@@ -5,7 +5,12 @@
 - Handoff branch: `dockerize-app`
 - Source branch: `host-backend`
 - Source commit at branch creation: `db3099a`
-- Docker is not currently installed or available in this execution environment.
+- Docker Desktop, WSL2 and Ubuntu are now available on the development host.
+- The PostgreSQL, Redis, web and vision Compose stack has started successfully.
+- Upload creates a persisted `VisionJob`.
+- The vision container loads one shared YOLO runtime and processes pending MP4 jobs.
+- A real uploaded MP4 produced persisted people counts and approximately 22.7 FPS.
+- Counting density remains unmeasured until a valid calibration is supplied.
 - Docker Desktop and Docker CLI 29.9.3 have now been installed on this host.
 - Docker Engine is awaiting Windows WSL2/virtualization feature activation and reboot.
 - `docker compose config` validates the PostgreSQL/Redis/web Compose baseline.

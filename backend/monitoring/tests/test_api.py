@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from backend.monitoring.enums import IncidentState, Severity
-from backend.monitoring.models import CriticalIncident, Feed, FeedMetric, Zone
+from backend.monitoring.models import CriticalIncident, Feed, FeedMetric, VisionJob, Zone
 from backend.monitoring.views import set_incident_dependencies
 from backend.worker_api.views import set_telemetry_processor
 
@@ -165,6 +165,33 @@ def test_worker_auth_and_replayed_telemetry(api, feed, settings, integration_dou
 
 
 @pytest.mark.django_db
+def test_uncalibrated_telemetry_keeps_real_people_count(api, feed, settings):
+    settings.WORKER_INGEST_TOKEN = "worker-secret"
+    payload = {
+        "feed_id": str(feed.id),
+        "sample_id": "uncalibrated-1",
+        "sequence": 1,
+        "captured_at": "2026-11-20T16:00:00Z",
+        "processed_at": "2026-11-20T16:00:01Z",
+        "people_count": 7,
+        "measured_fps": 6.0,
+        "quality_flags": ["calibration_invalid"],
+        "is_valid": False,
+    }
+    response = APIClient().post(
+        "/internal/telemetry/",
+        payload,
+        format="json",
+        HTTP_X_WORKER_TOKEN="worker-secret",
+    )
+    assert response.status_code == 201
+    metric = FeedMetric.objects.get(feed=feed, sequence=1)
+    assert metric.people_count == 7
+    assert metric.density_people_per_m2 is None
+    assert metric.is_valid is False
+
+
+@pytest.mark.django_db
 def test_missing_authoritative_providers_fail_explicitly(api, feed, settings):
     settings.WORKER_INGEST_TOKEN = "worker-secret"
     set_telemetry_processor(None)
@@ -209,3 +236,6 @@ def test_upload_creates_playable_preview(api):
     assert data["stream_state"] == "replay"
     assert data["preview_transport"] == "video"
     assert data["preview_url"].startswith("/media/feeds/")
+    job = VisionJob.objects.get(feed_id=data["feed_id"])
+    assert job.state == VisionJob.STATE_PENDING
+    assert job.source_path.startswith("feeds/")

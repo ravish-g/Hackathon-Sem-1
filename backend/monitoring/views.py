@@ -12,7 +12,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 from .enums import IncidentState, SourceType
-from .models import Calibration, CriticalIncident, EventLogEntry, Feed, Zone
+from .models import Calibration, CriticalIncident, EventLogEntry, Feed, VisionJob, Zone
 from .selectors import active_incidents_queryset, event_cursor, feed_queryset
 from .serializers import CalibrationSerializer, EventSerializer, FeedSerializer, IncidentSerializer, TelemetrySerializer
 
@@ -148,6 +148,11 @@ def feed_upload(request):
         stream_state="replay",
         preview_url=f"{settings.MEDIA_URL}feeds/{stored_name}",
         preview_transport="video",
+    )
+    VisionJob.objects.create(
+        feed=feed,
+        source_path=f"feeds/{stored_name}",
+        configuration_version=feed.configuration_version,
     )
     return Response(feed_data(feed), status=status.HTTP_201_CREATED)
 

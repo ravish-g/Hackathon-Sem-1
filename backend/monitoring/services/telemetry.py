@@ -36,11 +36,12 @@ class ValidatedObservation:
     captured_at: datetime
     processed_at: datetime
     people_count: int | None
-    density: float
-    calibration_version: int
+    density: float | None
+    calibration_version: int | None
     measured_fps: float | None
     inference_ms: float | None
     quality_flags: list
+    is_valid: bool
 
 class ObservationValidationError(ValueError):
     pass
@@ -103,6 +104,36 @@ class TelemetryProcessor:
             if people_count < 0:
                 raise ObservationValidationError("people_count must be a nonnegative integer")
 
+        if payload.get("is_valid") is False and payload.get("density_people_per_m2") is None:
+            quality_flags = payload.get("quality_flags")
+            if quality_flags is None:
+                quality_flags = []
+            if not isinstance(quality_flags, list):
+                raise ObservationValidationError("quality_flags must be a list")
+            measured_fps = payload.get("measured_fps")
+            if measured_fps is not None:
+                try:
+                    measured_fps = float(measured_fps)
+                except (TypeError, ValueError):
+                    raise ObservationValidationError("measured_fps must be numeric")
+                if not math.isfinite(measured_fps) or measured_fps < 0:
+                    raise ObservationValidationError("measured_fps must be finite and nonnegative")
+            inference_ms = payload.get("inference_ms")
+            if inference_ms is not None:
+                try:
+                    inference_ms = float(inference_ms)
+                except (TypeError, ValueError):
+                    raise ObservationValidationError("inference_ms must be numeric")
+                if not math.isfinite(inference_ms) or inference_ms < 0:
+                    raise ObservationValidationError("inference_ms must be finite and nonnegative")
+            self.incidents.mark_recovery_unavailable(feed)
+            return ValidatedObservation(
+                str(feed.id), payload.get("zone_id"),
+                str(payload.get("sample_id") or uuid.uuid4()),
+                sequence, captured_at, processed_at, people_count, None,
+                None, measured_fps, inference_ms, quality_flags, False,
+            )
+
         density = payload.get("density_people_per_m2")
         try:
             density = float(density)
@@ -163,7 +194,7 @@ class TelemetryProcessor:
             str(feed.id), str(zone_id) if zone_id else None,
             str(payload.get("sample_id") or uuid.uuid4()),
             sequence, captured_at, processed_at, people_count, density,
-            calibration_version, measured_fps, inference_ms, quality_flags,
+            calibration_version, measured_fps, inference_ms, quality_flags, True,
         )
 
     @transaction.atomic
@@ -206,6 +237,36 @@ class TelemetryProcessor:
 
         prior_density = previous.density_people_per_m2 if previous else None
         prior_time = previous.captured_at if previous else None
+        if observation.density is None:
+            try:
+                metric = FeedMetric.objects.create(
+                    feed=feed, zone=None, sample_id=observation.sample_id,
+                    sequence=observation.sequence, captured_at=observation.captured_at,
+                    processed_at=observation.processed_at,
+                    people_count=observation.people_count,
+                    density_people_per_m2=None,
+                    density_trend=DensityTrend.UNKNOWN.value,
+                    growth_rate=0.0,
+                    predicted_threshold_time=None,
+                    measured_fps=observation.measured_fps,
+                    inference_ms=observation.inference_ms,
+                    calibration_version=None,
+                    quality_flags=observation.quality_flags,
+                    is_valid=False,
+                )
+            except IntegrityError:
+                existing = FeedMetric.objects.filter(feed=feed, sequence=observation.sequence).first()
+                return {"duplicate": True, "metric": existing, "risk": None}
+            feed.severity = Severity.UNKNOWN.value
+            feed.risk_score = None
+            feed.last_metric_at = observation.captured_at
+            feed.stream_state = StreamState.REPLAY
+            feed.state_version += 1
+            feed.save(update_fields=[
+                "severity", "risk_score", "last_metric_at", "stream_state",
+                "state_version", "updated_at",
+            ])
+            return {"duplicate": False, "metric": metric, "risk": None, "lifecycle": None}
         risk = self.assessor.assess(
             observation.density, observation.captured_at,
             prior_density, prior_time, feed.severity,

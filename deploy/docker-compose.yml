@@ -34,7 +34,7 @@ services:
       DJANGO_DEBUG: "true"
       DATABASE_URL: postgres://${POSTGRES_USER:-crowd_fuzion}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-crowd_fuzion}
       REDIS_URL: redis://redis:6379/0
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,web
       ALLOW_LOCAL_ANONYMOUS: "true"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-for-local-docker}
       WORKER_INGEST_TOKEN: ${WORKER_INGEST_TOKEN:-local-worker-token}
@@ -52,6 +52,35 @@ services:
       sh -c "python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
              python -m daphne -b 0.0.0.0 -p 8000 backend.config.asgi:application"
+
+  vision:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.vision
+    restart: unless-stopped
+    environment:
+      DJANGO_DEBUG: "false"
+      DATABASE_URL: postgres://${POSTGRES_USER:-crowd_fuzion}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-crowd_fuzion}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,web
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-for-local-docker}
+      WORKER_INGEST_TOKEN: ${WORKER_INGEST_TOKEN:-local-worker-token}
+      VISION_TELEMETRY_URL: http://web:8000/internal/telemetry/
+      VISION_MODEL: ${VISION_MODEL:-yolo11n.pt}
+      VISION_DEVICE: ${VISION_DEVICE:-cpu}
+      VISION_CONFIDENCE: ${VISION_CONFIDENCE:-0.25}
+      VISION_MAX_FEEDS: ${VISION_MAX_FEEDS:-2}
+      VISION_POLL_SECONDS: ${VISION_POLL_SECONDS:-5}
+      MEDIA_STORAGE_PATH: /app/media
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
 
 volumes:
   postgres_data:

@@ -35,6 +35,34 @@ class Feed(models.Model):
         ordering = ["name", "id"]
 
 
+class VisionJob(models.Model):
+    STATE_PENDING = "pending"
+    STATE_RUNNING = "running"
+    STATE_COMPLETED = "completed"
+    STATE_ERROR = "error"
+
+    feed = models.OneToOneField(Feed, on_delete=models.CASCADE, related_name="vision_job")
+    state = models.CharField(
+        max_length=20,
+        choices=[
+            (STATE_PENDING, "Pending"),
+            (STATE_RUNNING, "Running"),
+            (STATE_COMPLETED, "Completed"),
+            (STATE_ERROR, "Error"),
+        ],
+        default=STATE_PENDING,
+    )
+    worker_id = models.CharField(max_length=120, blank=True)
+    source_path = models.CharField(max_length=500, blank=True)
+    error_message = models.CharField(max_length=1000, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True)
+    configuration_version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Zone(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     feed = models.ForeignKey(Feed, on_delete=models.CASCADE, related_name="zones")
