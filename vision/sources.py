@@ -14,7 +14,7 @@ class SourceReader:
     def __init__(self, feed_id: str, source, frames: Queue, frame_stride: int = 1,
                  reconnect_delay: float = 2.0, target_resolution: tuple[int, int] | None = None):
         self.feed_id = feed_id
-        self.source = source
+        self.source = int(source) if isinstance(source, str) and source.isdigit() else source
         self.frames = frames
         self.frame_stride = max(1, frame_stride)
         self.reconnect_delay = reconnect_delay

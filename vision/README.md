@@ -13,6 +13,14 @@ Required runtime dependencies:
 - `trackers` for optional supported tracking
 - `requests` for HTTPS telemetry publishing
 
+These packages are integration requirements and are not added to the Django
+root requirements file. Real detection cannot run until they are installed and
+a YOLO checkpoint is available.
+
+The Ultralytics YOLO model is instantiated separately for each feed. This avoids
+sharing an inference runtime concurrently across the two processor threads.
+Trackers and zone state also remain per-feed.
+
 Run with two MP4 sources:
 
 ```powershell
@@ -21,6 +29,10 @@ python -m vision.main --feed feed-a=clip-a.mp4 --feed feed-b=clip-b.mp4 --model 
 
 Camera sources use numeric indices or RTSP URLs as the source value, for example
 `--feed feed-a=0 --feed feed-b=1`.
+
+`--resolution WIDTHxHEIGHT` resizes every captured frame before inference.
+For example, `--resolution 1280x720`. Invalid or non-positive resolutions are
+rejected by the CLI.
 
 Each calibration JSON may contain `image_points`, `ground_points_m`,
 `calibration_version`, and zone polygons:
