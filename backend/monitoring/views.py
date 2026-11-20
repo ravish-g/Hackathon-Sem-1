@@ -18,8 +18,9 @@ from .serializers import CalibrationSerializer, EventSerializer, FeedSerializer,
 
 
 AUTH = [SessionAuthentication, BasicAuthentication]
-_incident_engine = None
-_event_publisher = None
+_UNSET = object()
+_incident_engine = _UNSET
+_event_publisher = _UNSET
 
 
 def set_incident_dependencies(engine, publisher):
@@ -29,7 +30,7 @@ def set_incident_dependencies(engine, publisher):
 
 
 def _load_incident_dependencies():
-    if _incident_engine is not None and _event_publisher is not None:
+    if _incident_engine is not _UNSET or _event_publisher is not _UNSET:
         return _incident_engine, _event_publisher
     try:
         incidents = import_module("backend.monitoring.services.incidents")

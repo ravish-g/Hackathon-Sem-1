@@ -11,7 +11,8 @@ from backend.monitoring.models import Feed, FeedMetric
 from backend.monitoring.serializers import TelemetrySerializer
 from backend.monitoring.views import error
 
-_telemetry_processor = None
+_UNSET = object()
+_telemetry_processor = _UNSET
 
 
 def set_telemetry_processor(processor):
@@ -20,7 +21,7 @@ def set_telemetry_processor(processor):
 
 
 def _load_telemetry_processor():
-    if _telemetry_processor is not None:
+    if _telemetry_processor is not _UNSET:
         return _telemetry_processor
     try:
         telemetry = import_module("backend.monitoring.services.telemetry")
