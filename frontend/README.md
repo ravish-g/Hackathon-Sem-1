@@ -1,4 +1,4 @@
-# Antropy
+# Entropy
 
 A responsive campus-fest control room built with browser-native HTML, CSS and JavaScript. The four default camera views are generated still images with illustrative annotations and sample measurements.
 

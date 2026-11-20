@@ -1,6 +1,6 @@
 /* The demo adapter is a local fixture service. The live adapter consumes the
    Django contract in the brief. Only incident messages/snapshots clear a pin. */
-window.AntropyData = (() => {
+window.EntropyData = (() => {
   const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
   const definitions = [
     ['gate','Main Gate','North entrance', 'critical',186,48.5,0.14,'gate', [2.2,2.26,2.19,2.51,2.46,2.66,2.61,2.93,2.84,3.15,3.1,3.42,3.38,3.67,3.84]],
@@ -73,7 +73,7 @@ window.AntropyData = (() => {
   }
   function demoRecord(write,value){
     return new Promise(resolve=>{
-      const open=indexedDB.open('antropy-demo-fixtures',1);
+      const open=indexedDB.open('entropy-demo-fixtures',1);
       open.onupgradeneeded=()=>open.result.createObjectStore('scenario');
       open.onerror=()=>resolve(null);
       open.onsuccess=()=>{const db=open.result;const tx=db.transaction('scenario',write?'readwrite':'readonly');
