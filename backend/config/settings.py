@@ -23,6 +23,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "backend.config.cors.LocalCorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -56,6 +57,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 ASGI_THREADS = int(os.getenv("ASGI_THREADS", "4"))
 WORKER_INGEST_TOKEN = os.getenv("WORKER_INGEST_TOKEN", "")
 ALLOW_LOCAL_ANONYMOUS = os.getenv("ALLOW_LOCAL_ANONYMOUS", "false").lower() == "true"
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",") if origin.strip()
+]
 METRIC_STALE_SECONDS = int(os.getenv("METRIC_STALE_SECONDS", "15"))
 CRITICAL_RECOVERY_SECONDS = int(os.getenv("CRITICAL_RECOVERY_SECONDS", "30"))
 
