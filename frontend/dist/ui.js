@@ -10,7 +10,7 @@ warn:'m12 3 10 17H2z M12 9v4 M12 16h.01',check:'m4 12 5 5L20 6',clock:'M21 12a9 
 const icon=k=>`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[k]||paths.info}"/></svg>`;
 const esc=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const $=s=>document.querySelector(s);
-const UI={feeds:new Map(), incidents:new Map(), events:new Map(),mode:'demo',status:"",sort:'risk',layout:'grid',filter:'All',route:'overview',adapter:null,audio:null,streams:new Map(),objectUrls:new Set(),lastOrder:0,staleAfter:15};
+const UI={feeds:new Map(), incidents:new Map(), events:new Map(),mode:'demo',status:"",sort:'risk',layout:'grid',filter:'All',route:'overview',adapter:null,audio:null,streams:new Map(),objectUrls:new Set(),lastOrder:0,staleAfter:1800};
 const active=()=>[...UI.incidents.values()].filter(i=>i.state==='active');
 const locks=()=>active().filter(i=>!i.acknowledged);
 const stale=f=>!f.fixture&&(f.stream_state==='stale'||(UI.mode==='live'&&(UI.status!=='Connected'||(!f.metric_timestamp||Date.now()-Date.parse(f.metric_timestamp)>UI.staleAfter*1000))));

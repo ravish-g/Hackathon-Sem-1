@@ -12,7 +12,8 @@ from .types import FramePacket
 
 class SourceReader:
     def __init__(self, feed_id: str, source, frames: Queue, frame_stride: int = 1,
-                 reconnect_delay: float = 2.0, target_resolution: tuple[int, int] | None = None):
+                 reconnect_delay: float = 2.0, target_resolution: tuple[int, int] | None = None,
+                 loop: bool = False):
         self.feed_id = feed_id
         self.source = int(source) if isinstance(source, str) and source.isdigit() else source
         self.frames = frames
@@ -22,6 +23,7 @@ class SourceReader:
         self.thread: threading.Thread | None = None
         self.frame_number = 0
         self.target_resolution = target_resolution
+        self.loop = loop
         self.ended = False
 
     def start(self) -> None:
@@ -69,6 +71,9 @@ class SourceReader:
             finally:
                 capture.release()
             if isinstance(self.source, str) and Path(self.source).is_file():
+                if self.loop and not self.stop_event.is_set():
+                    self.frame_number = 0
+                    continue
                 self.ended = True
                 return
             if not self.stop_event.is_set():
