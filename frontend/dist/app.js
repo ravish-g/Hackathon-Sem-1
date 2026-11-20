@@ -19,8 +19,9 @@ function snapshot(s){
 }
 function freeMedia(id){const f=UI.feeds.get(id);UI.streams.get(id)?.getTracks().forEach(t=>t.stop());UI.streams.delete(id);if(UI.objectUrls.delete(f?.preview_url))URL.revokeObjectURL(f.preview_url);}
 function switchData(){UI.adapter?.stop();UI.adapter=null;UI.feeds.forEach(f=>freeMedia(f.feed_id));UI.feeds.clear();UI.incidents.clear();UI.events.clear();}
-function setStatus(s){UI.status=s;$('#connection').innerHTML='<b></b>'+esc(s);$('#connection').classList.toggle('off',['Disconnected','Connecting'].includes(s));}
-async function startDemo(){switchData();UI.mode='demo';setStatus('Demo session');snapshot(AntropyData.demoSnapshot());let rec=null;try{rec=await AntropyData.demoRecord(false);}catch{}if(rec&&UI.mode==='demo')applyDemoRecord(rec);show();}
+function setStatus(s){UI.status=s;$('#connection').hidden = !s;
+    $('#connection').innerHTML='<b></b>'+esc(s);$('#connection').classList.toggle('off',['Disconnected','Connecting'].includes(s));}
+async function startDemo(){switchData();UI.mode='demo';setStatus("");snapshot(AntropyData.demoSnapshot());let rec=null;try{rec=await AntropyData.demoRecord(false);}catch{}if(rec&&UI.mode==='demo')applyDemoRecord(rec);show();}
 function applyDemoRecord(rec){
  const f=UI.feeds.get('gate');if(!f)return;
  if(rec.resolved){UI.incidents.delete('sample-gate');Object.assign(f,{severity:'normal',risk_score:18,people_count:58,density_people_per_m2:58/f.zone_area_m2,density_trend:'falling',growth_rate:-.12,metric_timestamp:rec.when});}
