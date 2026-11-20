@@ -31,7 +31,7 @@ services:
       dockerfile: deploy/Dockerfile.web
     restart: unless-stopped
     environment:
-      DJANGO_DEBUG: "false"
+      DJANGO_DEBUG: "true"
       DATABASE_URL: postgres://${POSTGRES_USER:-crowd_fuzion}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-crowd_fuzion}
       REDIS_URL: redis://redis:6379/0
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1

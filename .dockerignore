@@ -7,4 +7,3 @@ __pycache__
 .pytest_cache
 media
 db.sqlite3
-frontend/dist
