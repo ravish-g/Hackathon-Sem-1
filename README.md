@@ -30,3 +30,31 @@ python -m pytest -q
 ```
 
 The [benchmark notes](benchmarks/README.md) record the same-frame detector comparison and measured two-feed throughput. Count accuracy requires independently labeled footage. The [API contract](API_CONTRACT.md) describes the dashboard, worker and incident interfaces.
+
+## Hosted deployment on a Linux VM
+
+Use a Linux VM with Docker Engine, the current Compose plugin and persistent
+disk. Point a DNS hostname to its public address. Allow inbound TCP 80 and
+443 for Caddy and restrict SSH to the deployment administrator. Copy the
+project checkout, including the model weights, to the VM. Run these commands
+in the project root on a fresh deployment, replacing the example hostname.
+Keep the generated environment file for subsequent updates.
+
+```sh
+umask 077
+(test ! -e .env && {
+  echo 'PUBLIC_HOST=crowd.example.org'
+  for key in DJANGO_SECRET_KEY POSTGRES_PASSWORD WORKER_INGEST_TOKEN; do
+    echo "$key=$(openssl rand -hex 32)"
+  done
+} > .env)
+docker compose -f deploy/docker-compose.yml -f deploy/compose.hosted.yml up --build -d
+docker compose -f deploy/docker-compose.yml -f deploy/compose.hosted.yml exec web python manage.py createsuperuser
+```
+
+Visit the HTTPS hostname and sign in. Upload the footage cleared for sharing.
+New server volumes start empty. Network cameras must be reachable from the
+remote worker. The hosted profile keeps database, Redis and worker ingest
+inside the Docker network and requires sign-in for the dashboard and video
+files. Dashboard users have operator controls. Back up the PostgreSQL and
+media volumes before replacing the VM.

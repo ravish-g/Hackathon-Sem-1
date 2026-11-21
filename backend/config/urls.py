@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView
 from django.http import FileResponse, Http404
 from django.urls import include, path, re_path
 from django.views.static import serve
@@ -21,11 +23,18 @@ def frontend(request, path=""):
         raise Http404("Frontend build was not found.")
     return FileResponse(index.open("rb"), content_type="text/html")
 
-urlpatterns = [
+media = serve
+urlpatterns = []
+if settings.HOSTED_DASHBOARD:
+    frontend = login_required(frontend)
+    media = login_required(media)
+    urlpatterns.append(path("accounts/login/", LoginView.as_view(template_name="login.html")))
+
+urlpatterns += [
     path("health/", health, name="health"),
     path("api/", include("backend.monitoring.urls")),
     path("internal/", include("backend.worker_api.urls")),
-    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
+    re_path(r"^media/(?P<path>.*)$", media, {"document_root": settings.MEDIA_ROOT}),
     re_path(r"^(?P<path>.*)$", frontend),
 ]
 

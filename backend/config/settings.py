@@ -82,3 +82,16 @@ REST_FRAMEWORK = {
         "backend.config.negotiation.IgnoreClientContentNegotiation",
 }
 
+
+HOSTED_DASHBOARD = os.getenv("HOSTED_DASHBOARD", "false").lower() == "true"
+if HOSTED_DASHBOARD:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    LOGIN_URL = "/accounts/login/"
+    LOGIN_REDIRECT_URL = "/"
+    TEMPLATES = [{
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "backend" / "templates"],
+        "APP_DIRS": True,
+    }]

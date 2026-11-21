@@ -9,8 +9,16 @@ django_application = get_asgi_application()
 
 from backend.config.routing import websocket_urlpatterns
 
+from django.conf import settings
+from channels.auth import AuthMiddlewareStack
+from channels.security.websocket import AllowedHostsOriginValidator
+
+websocket = URLRouter(websocket_urlpatterns)
+if settings.HOSTED_DASHBOARD:
+    websocket = AllowedHostsOriginValidator(AuthMiddlewareStack(websocket))
+
 application = ProtocolTypeRouter({
     "http": django_application,
-    "websocket": URLRouter(websocket_urlpatterns),
+    "websocket": websocket,
 })
 
