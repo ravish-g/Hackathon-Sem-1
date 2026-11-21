@@ -41,15 +41,8 @@ in the project root on a fresh deployment, replacing the example hostname.
 Keep the generated environment file for subsequent updates.
 
 ```sh
-umask 077
-(test ! -e .env && {
-  echo 'PUBLIC_HOST=crowd.example.org'
-  for key in DJANGO_SECRET_KEY POSTGRES_PASSWORD WORKER_INGEST_TOKEN; do
-    echo "$key=$(openssl rand -hex 32)"
-  done
-} > .env)
-docker compose -f deploy/docker-compose.yml -f deploy/compose.hosted.yml up --build -d
-docker compose -f deploy/docker-compose.yml -f deploy/compose.hosted.yml exec web python manage.py createsuperuser
+bash deploy/start-hosted.sh crowd.example.org
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.hosted.yml exec web python manage.py createsuperuser
 ```
 
 Visit the HTTPS hostname and sign in. Upload the footage cleared for sharing.
