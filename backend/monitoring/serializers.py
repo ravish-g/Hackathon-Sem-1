@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from rest_framework import serializers
 import numpy as np
 
@@ -42,6 +44,7 @@ class ZoneSerializer(serializers.ModelSerializer):
 class FeedSerializer(serializers.ModelSerializer):
     feed_id = serializers.UUIDField(source="id", read_only=True)
     latest_metric = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
     people_count = serializers.SerializerMethodField()
     density_people_per_m2 = serializers.SerializerMethodField()
     density_trend = serializers.SerializerMethodField()
@@ -61,7 +64,7 @@ class FeedSerializer(serializers.ModelSerializer):
             "stream_state", "analysis_state", "severity", "risk_score",
             "last_metric_at", "last_frame_at", "preview_url", "preview_transport",
             "configuration_version", "state_version", "created_at", "updated_at",
-            "latest_metric", "people_count", "density_people_per_m2", "density_trend",
+            "latest_metric", "history", "people_count", "density_people_per_m2", "density_trend",
             "growth_rate", "predicted_threshold_time", "measured_fps", "metric_timestamp",
             "zone_area_m2", "calibrated", "zones",
         )
@@ -79,18 +82,43 @@ class FeedSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance is None and not attrs.get("name"):
             raise serializers.ValidationError({"name": "This field is required."})
-        if attrs.get("source_type") == SourceType.NETWORK.value:
-            config = attrs.get("source_config", {})
+        source_type = attrs.get("source_type", getattr(self.instance, "source_type", None))
+        config = attrs.get("source_config", getattr(self.instance, "source_config", {}))
+        if source_type == SourceType.NETWORK.value:
             if not isinstance(config, dict) or not config.get("url"):
                 raise serializers.ValidationError({"source_config": "A network source requires a URL."})
+            try:
+                address = urlsplit(config["url"])
+                if (address.scheme not in {"http", "https", "rtsp"} or not address.hostname
+                        or address.username or address.password):
+                    raise ValueError
+                address.port
+            except (ValueError, TypeError, AttributeError):
+                raise serializers.ValidationError({"source_config": "Enter an HTTP, HTTPS or RTSP stream URL without credentials."})
+        if source_type == SourceType.WEBCAM.value:
+            index = config.get("device_index", 0)
+            if type(index) is not int or index < 0:
+                raise serializers.ValidationError({"source_config": "Enter a nonnegative camera index."})
         return attrs
 
+    def get_history(self, obj):
+        latest = self._latest_metric(obj)
+        if not latest or not latest.is_valid:
+            return []
+        densities = obj.metrics.filter(
+            zone_id=latest.zone_id, calibration_version=latest.calibration_version,
+            is_valid=True, density_people_per_m2__isnull=False,
+        ).order_by("-sequence").values_list("density_people_per_m2", flat=True)[:90]
+        return list(reversed(list(densities)))
+
     def get_latest_metric(self, obj):
-        metric = obj.metrics.order_by("-sequence").first()
+        metric = self._latest_metric(obj)
         return FeedMetricSerializer(metric).data if metric else None
 
     def _latest_metric(self, obj):
-        return obj.metrics.order_by("-sequence").first()
+        if not hasattr(obj, "_serialized_metric"):
+            obj._serialized_metric = obj.metrics.order_by("-sequence").first()
+        return obj._serialized_metric
 
     def _latest_calibration(self, obj):
         zone = obj.zones.filter(is_active=True).prefetch_related("calibrations").first()
@@ -151,10 +179,10 @@ class CalibrationSerializer(serializers.Serializer):
             points = attrs[field]
             if len(points) != 4 or any(not isinstance(point, (list, tuple)) or len(point) != 2 for point in points):
                 raise serializers.ValidationError({field: "Exactly four 2D points are required."})
+            if any(not all(isinstance(value, (int, float)) and np.isfinite(value) for value in point) for point in points):
+                raise serializers.ValidationError({field: "Points must contain numeric coordinates."})
             if len({tuple(point) for point in points}) != 4:
                 raise serializers.ValidationError({field: "Points must be distinct."})
-            if any(not all(isinstance(value, (int, float)) for value in point) for point in points):
-                raise serializers.ValidationError({field: "Points must contain numeric coordinates."})
         def polygon_area(points):
             return abs(sum(
                 points[index][0] * points[(index + 1) % 4][1] -

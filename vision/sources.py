@@ -25,6 +25,7 @@ class SourceReader:
         self.target_resolution = target_resolution
         self.loop = loop
         self.ended = False
+        self.preview_path = None
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, name=f"capture-{self.feed_id}", daemon=True)
@@ -35,9 +36,18 @@ class SourceReader:
         if self.thread:
             self.thread.join(timeout=3.0)
 
+    @staticmethod
+    def open_capture(source):
+        if isinstance(source, str) and source.startswith(("rtsp://", "http://", "https://")):
+            return cv2.VideoCapture(source, cv2.CAP_FFMPEG, [
+                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000,
+            ])
+        return cv2.VideoCapture(source)
+
     def _run(self) -> None:
         while not self.stop_event.is_set():
-            capture = cv2.VideoCapture(self.source)
+            capture = self.open_capture(self.source)
+            last_preview = 0
             if not capture.isOpened():
                 time.sleep(self.reconnect_delay)
                 continue
@@ -51,6 +61,11 @@ class SourceReader:
                         continue
                     if self.target_resolution:
                         frame = cv2.resize(frame, self.target_resolution)
+                    if self.preview_path and time.monotonic() - last_preview >= 1:
+                        temp = self.preview_path.with_suffix(".tmp.jpg")
+                        if cv2.imwrite(str(temp), frame):
+                            temp.replace(self.preview_path)
+                        last_preview = time.monotonic()
                     packet = FramePacket(
                         feed_id=self.feed_id,
                         source_id=str(self.source),

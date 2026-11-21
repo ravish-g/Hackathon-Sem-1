@@ -58,3 +58,10 @@ def test_invalid_calibration_returns_invalid_density():
 def test_invalid_polygon_area_rejected():
     with pytest.raises(ValueError):
         polygon_area_m2(np.array([[0, 0], [1, 1], [1, 1]], dtype=np.float32))
+
+def test_untracked_people_do_not_share_an_identity():
+    polygon = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], dtype=np.float32)
+    calibration = HomographyCalibration(polygon, polygon.copy())
+    boxes = np.array([[1, 1, 2, 2], [3, 1, 4, 2], [5, 1, 6, 2]], dtype=np.float32)
+    count, _, _ = count_zone_occupants(calibration, Zone("floor", polygon), boxes, [2, -1, -1])
+    assert count == 3

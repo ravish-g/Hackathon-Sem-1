@@ -8,8 +8,9 @@ import numpy as np
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
+from django.db.models import F
 
-from backend.monitoring.models import Calibration, Feed, VisionJob
+from backend.monitoring.models import Calibration, Feed, FeedMetric, VisionJob
 from vision.calibration import HomographyCalibration
 from vision.detector import YoloPersonDetector
 from vision.publisher import TelemetryPublisher
@@ -29,6 +30,7 @@ class Command(BaseCommand):
         detector = YoloPersonDetector(
             model_path=os.getenv("VISION_MODEL", "yolo11n.pt"),
             confidence=float(os.getenv("VISION_CONFIDENCE", "0.25")),
+            tile_size=int(os.getenv("VISION_TILE_SIZE", "640")),
             device=os.getenv("VISION_DEVICE", "cpu"),
         )
         telemetry_url = os.getenv("VISION_TELEMETRY_URL", "http://web:8000/internal/telemetry/")
@@ -42,39 +44,55 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Vision supervisor started"))
             while True:
                 self._heartbeat(active, worker_id)
-                for job in VisionJob.objects.select_related("feed").filter(
+                jobs = VisionJob.objects.select_related("feed").filter(
                     state__in=[
                         VisionJob.STATE_PENDING,
                         VisionJob.STATE_RUNNING,
                         VisionJob.STATE_COMPLETED,
                     ]
-                ).order_by("created_at"):
+                ).order_by(F("started_at").asc(nulls_first=True), "created_at")
+                waiting = jobs.exclude(feed_id__in=active)
+                if len(active) >= max_feeds and waiting.exists():
+                    oldest = jobs.filter(feed_id__in=active).first()
+                    if oldest and (timezone.now() - oldest.started_at).total_seconds() >= 20:
+                        reader, processor = active.pop(str(oldest.feed_id))
+                        reader.stop()
+                        processor.stop()
+                        oldest.feed.analysis_state = "paused"
+                        oldest.feed.save(update_fields=["analysis_state"])
+                for job in jobs:
                     if len(active) >= max_feeds:
                         break
                     if str(job.feed_id) in active:
                         continue
-                    if job.feed.source_type != "upload":
-                        continue
-                    if not job.source_path:
-                        self._mark_error(job, "Upload source path is missing")
-                        continue
-                    source = (Path(settings.MEDIA_ROOT) / job.source_path).resolve()
-                    if not source.is_file():
-                        self._mark_error(job, f"Upload source was not found: {job.source_path}")
+                    replay = job.feed.source_type == "upload"
+                    if replay:
+                        source = str(Path(settings.MEDIA_ROOT) / job.source_path)
+                    elif job.feed.source_type == "webcam":
+                        source = job.feed.source_config.get("device_index", 0)
+                    else:
+                        source = job.feed.source_config.get("url")
+                    if source is None or (replay and not Path(source).is_file()):
+                        self._mark_error(job, "Video source unavailable")
                         continue
                     try:
-                        capture = cv2.VideoCapture(str(source))
-                        if not capture.isOpened():
+                        capture = SourceReader.open_capture(source)
+                        try:
+                            ok, frame = capture.read()
+                        finally:
                             capture.release()
-                            self._mark_error(job, "OpenCV could not open the uploaded MP4")
-                            continue
-                        ok, frame = capture.read()
-                        capture.release()
                         if not ok:
-                            self._mark_error(job, "Uploaded MP4 contains no readable frame")
+                            self._mark_error(job, "Could not read a frame from this source")
                             continue
                         calibration, zones = self._load_calibration(job.feed, frame.shape[1], frame.shape[0])
-                        reader = SourceReader(str(job.feed_id), str(source), None, loop=True)
+                        reader = SourceReader(str(job.feed_id), source, None, loop=replay)
+                        if not replay:
+                            preview = Path(settings.MEDIA_ROOT) / "previews" / f"{job.feed_id}.jpg"
+                            preview.parent.mkdir(exist_ok=True)
+                            cv2.imwrite(str(preview), frame)
+                            reader.preview_path = preview
+                            job.feed.preview_url = f"{settings.MEDIA_URL}previews/{preview.name}"
+                            job.feed.preview_transport = "image"
                         processor = SourceProcessor(
                             str(job.feed_id),
                             detector,
@@ -83,27 +101,31 @@ class Command(BaseCommand):
                             publisher,
                             tracking=True,
                         )
+                        processor.sequence = (FeedMetric.objects.filter(feed_id=job.feed_id)
+                                              .order_by("-sequence").values_list("sequence", flat=True)
+                                              .first() or 0)
                         reader.frames = processor.frames
                         reader.start()
                         processor.start()
                         active[str(job.feed_id)] = (reader, processor)
+                        job.configuration_version = job.feed.configuration_version
                         job.state = VisionJob.STATE_RUNNING
                         job.worker_id = worker_id
                         job.started_at = timezone.now()
                         job.last_heartbeat_at = timezone.now()
                         job.error_message = ""
-                        job.save(update_fields=["state", "worker_id", "started_at", "last_heartbeat_at", "error_message", "updated_at"])
+                        job.save(update_fields=["state", "configuration_version", "worker_id", "started_at", "last_heartbeat_at", "error_message", "updated_at"])
                         job.feed.analysis_state = "active"
-                        job.feed.stream_state = "replay"
-                        job.feed.save(update_fields=["analysis_state", "stream_state", "updated_at"])
-                        self.stdout.write(self.style.SUCCESS(f"Started {job.feed.name}: {source.name}"))
+                        job.feed.stream_state = "replay" if replay else "live"
+                        job.feed.save(update_fields=["analysis_state", "stream_state", "preview_url", "preview_transport", "updated_at"])
+                        self.stdout.write(self.style.SUCCESS(f"Started {job.feed.name}: {job.feed.source_type}"))
                     except Exception as exc:
                         self._mark_error(job, str(exc))
 
                 completed = []
                 for feed_id, (reader, processor) in active.items():
                     job = VisionJob.objects.filter(feed_id=feed_id).first()
-                    if reader.ended:
+                    if reader.ended or job is None or job.configuration_version != job.feed.configuration_version:
                         reader.stop()
                         processor.stop()
                         if job:

@@ -260,7 +260,7 @@ class TelemetryProcessor:
             feed.severity = Severity.UNKNOWN.value
             feed.risk_score = None
             feed.last_metric_at = observation.captured_at
-            feed.stream_state = StreamState.REPLAY
+            feed.stream_state = StreamState.REPLAY if feed.source_type == "upload" else StreamState.LIVE
             feed.state_version += 1
             feed.save(update_fields=[
                 "severity", "risk_score", "last_metric_at", "stream_state",
@@ -299,7 +299,7 @@ class TelemetryProcessor:
         feed.severity = risk.severity.value
         feed.risk_score = risk.risk_score
         feed.last_metric_at = observation.captured_at
-        feed.stream_state = StreamState.LIVE
+        feed.stream_state = StreamState.REPLAY if feed.source_type == "upload" else StreamState.LIVE
         feed.state_version += 1
         feed.save(update_fields=[
             "severity", "risk_score", "last_metric_at", "stream_state",

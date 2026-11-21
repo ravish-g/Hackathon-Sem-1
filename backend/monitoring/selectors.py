@@ -1,4 +1,4 @@
-from django.db.models import Max, Prefetch
+from django.db.models import Max
 
 from .models import CriticalIncident, EventLogEntry, Feed, FeedMetric
 from .enums import IncidentState
@@ -10,7 +10,6 @@ def latest_metric_for_feed(feed):
 
 def feed_queryset():
     return Feed.objects.prefetch_related(
-        Prefetch("metrics", queryset=FeedMetric.objects.order_by("-sequence")),
         "zones__calibrations",
     )
 

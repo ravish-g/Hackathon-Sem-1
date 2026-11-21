@@ -92,7 +92,7 @@ class DashboardConsumer(AsyncJsonWebsocketConsumer):
     def _snapshot(self) -> dict:
         cursor = EventLogEntry.objects.aggregate(value=Max("sequence"))["value"] or 0
         feeds = []
-        for feed in Feed.objects.all().prefetch_related("metrics"):
+        for feed in Feed.objects.all():
             feed_data = FeedSerializer(feed).data
             feed_data["latest_metrics"] = feed_data.get("latest_metric")
             feeds.append(feed_data)

@@ -45,7 +45,7 @@ function addDialog(){
  let stream=null,inFlight=0;const stop=()=>{inFlight++;stream?.getTracks().forEach(t=>t.stop());stream=null;};
  open('Add camera feed',`<form class="form" id="source-form">${field('Feed name','<input name="name" placeholder="e.g. South Gate" required maxlength="70">')}${field('Zone or location','<input name="location" placeholder="e.g. South entrance" required maxlength="90">')}${field('Source type',`<select name="source"><option value="upload">Video file</option><option value="webcam">${UI.mode==='live'?'Processing-worker camera':'Browser webcam'}</option><option value="network">Network stream</option></select>`)}<div id="source-options"></div><div class="note">${UI.mode==='demo'?'Local sources support preview and zone setup. Connect the processing backend for person counting.':'The processing worker supplies count, density and inference measurements.'}</div>${footer('Add feed')}</form>`,stop);
  const form=$('#source-form'),opts=$('#source-options');
- function selection(){stop();opts.innerHTML=form.source.value==='upload'?field('Choose video','<input type="file" name="file" accept="video/*,.mp4,.webm,.mov" required>'):form.source.value==='network'?field(UI.mode==='live'?'Stream address (HTTP, HTTPS or RTSP)':'Browser-playable HTTP or HTTPS video URL','<input type="url" name="url" placeholder="https://camera.example/stream.mp4" required>'):UI.mode==='live'?field('Worker camera index','<input type="number" name="device" min="0" step="1" value="0" required>'):`<div class="form"><button type="button" id="startcam">${icon('cam')} Enable camera preview</button><select aria-label="Camera device" id="devices" hidden></select><video id="cam-preview" style="max-height:160px;width:100%" muted autoplay playsinline hidden></video></div>`;if($('#startcam')){$('#startcam').onclick=()=>startCam();$('#devices').onchange=()=>startCam($('#devices').value);}}
+ function selection(){stop();opts.innerHTML=form.source.value==='upload'?field('Choose video','<input type="file" name="file" accept=".mp4,.mov,.avi,.mkv" required>'):form.source.value==='network'?field(UI.mode==='live'?'Stream address (HTTP, HTTPS or RTSP)':'Browser-playable HTTP or HTTPS video URL','<input type="url" name="url" placeholder="https://camera.example/stream.mp4" required>'):UI.mode==='live'?field('Worker camera index','<input type="number" name="device" min="0" step="1" value="0" required>'):`<div class="form"><button type="button" id="startcam">${icon('cam')} Enable camera preview</button><select aria-label="Camera device" id="devices" hidden></select><video id="cam-preview" style="max-height:160px;width:100%" muted autoplay playsinline hidden></video></div>`;if($('#startcam')){$('#startcam').onclick=()=>startCam();$('#devices').onchange=()=>startCam($('#devices').value);}}
  async function startCam(device){stop();const token=inFlight;try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera access requires localhost or HTTPS and browser permission.');const next=await navigator.mediaDevices.getUserMedia({video:device?{deviceId:{exact:device}}:true,audio:false});if(token!==inFlight){next.getTracks().forEach(t=>t.stop());return;}stream=next;$('#cam-preview').srcObject=stream;$('#cam-preview').hidden=false;const list=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');if(token!==inFlight)return;$('#devices').innerHTML=list.map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||'Camera')}</option>`).join('');$('#devices').value=stream.getVideoTracks()[0].getSettings().deviceId||'';$('#devices').hidden=list.length<2;$('#startcam').textContent='Refresh camera preview';form.querySelector('.form-error').textContent='';}catch(e){if(token===inFlight)form.querySelector('.form-error').textContent='Camera access failed. '+e.message;}}
  selection();form.source.onchange=selection;
  submitHandler(form,async()=>{
@@ -90,6 +90,10 @@ function settings(){open('Connection settings',`<form id="settings-form" class="
  });}
 function setLiveStatus(s){setStatus(s);show();}
 function updateMetrics(){metricTimer=null;if(UI.route.startsWith('feed/')){const f=UI.feeds.get(UI.route.slice(5));if(!f)return;const frame=$('.detail-frame');if(!frame)return;
+ if(f.preview_transport==='image' && !f.fixture && f.preview_url){
+   const media=frame.querySelector('[data-media],.fallback');
+   if(media)media.outerHTML=markupMedia(f);
+ }
  const metrics=frame.parentElement.querySelector('.details-grid');
  metrics.innerHTML=A.detailStats(f).map(pair=>A.metric(...pair)).join('');
  const badge=frame.parentElement.querySelector('.split .tag');if(badge)badge.outerHTML=A.tag(sev(f));
@@ -99,7 +103,12 @@ function updateMetrics(){metricTimer=null;if(UI.route.startsWith('feed/')){const
  return;}
  if(UI.route!=='overview'){if(UI.route==='diagnostics')show();return;}const strip=$('.kpis');if(strip)strip.innerHTML=kpis();const grid=$('.feed-grid');if(!grid)return;
  const byId=new Map([...grid.querySelectorAll('[data-card]')].map(el=>[el.dataset.card,el]));
- for(const f of UI.feeds.values()){const el=byId.get(f.feed_id);if(!el)continue;el.className='card '+sev(f);el.querySelector('.stats-band').outerHTML=band(f);el.querySelector('.peek').innerHTML=peek(f);el.querySelector('.cam-labels').outerHTML=signal(f).split('<div class="frame-bottom">')[0];el.querySelector('.frame-bottom').innerHTML=`<span class="stamp"><i class="dot"></i>${esc(A.stream(f).toUpperCase())}</span><span class="stamp">${time(f.metric_timestamp)}</span>`;}
+ for(const f of UI.feeds.values()){const el=byId.get(f.feed_id);if(!el)continue;
+ if(f.preview_transport==='image' && !f.fixture && f.preview_url){
+   const media=el.querySelector('[data-media],.fallback');
+   if(media)media.outerHTML=markupMedia(f);
+ }
+ el.className='card '+sev(f);el.querySelector('.stats-band').outerHTML=band(f);el.querySelector('.peek').innerHTML=peek(f);el.querySelector('.cam-labels').outerHTML=signal(f).split('<div class="frame-bottom">')[0];el.querySelector('.frame-bottom').innerHTML=`<span class="stamp"><i class="dot"></i>${esc(A.stream(f).toUpperCase())}</span><span class="stamp">${time(f.metric_timestamp)}</span>`;}
  if(Date.now()-UI.lastOrder>5000&&!grid.contains(document.activeElement)&&!grid.matches(':hover')){UI.lastOrder=Date.now();sortFeeds().forEach((f,i)=>{const el=byId.get(f.feed_id);if(el&&grid.children[i]!==el)grid.insertBefore(el,grid.children[i]||null);});}}
 function receive(e){const kind=e.type,body=e.payload||e,inc=body.incident||body,fid=body.feed_id||body.feed?.feed_id||inc.feed_id;
  if(kind==='dashboard.snapshot')snapshot(body.snapshot||body);
@@ -131,7 +140,22 @@ async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outer
    toast(error.message);
  }
  const route=readRoute();if(route==='overview'||!guarded(route))UI.route=route;else{history.replaceState(null,'','#overview');guard();}show();
- setInterval(()=>{if(UI.mode==='live'&&!metricTimer&&UI.route==='overview')updateMetrics();},5000);
+ let refreshing=false;
+ setInterval(async()=>{
+   const adapter=UI.adapter;
+   if(UI.mode!=='live'||!adapter||refreshing)return;
+   refreshing=true;
+   try {
+     const {results}=await adapter.call('/api/feeds/');
+     if(adapter!==UI.adapter)return;
+     for(const feed of results){
+       const current=UI.feeds.get(feed.feed_id);
+       if(current)Object.assign(current,feed);
+     }
+     updateMetrics();
+   } catch { /* Keep the latest sample while reconnecting. */ }
+   finally {refreshing=false;}
+ },5000);
 }
 init();
 })();

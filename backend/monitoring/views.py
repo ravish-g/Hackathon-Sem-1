@@ -1,8 +1,10 @@
+import math
 import uuid
 from importlib import import_module
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authentication import BasicAuthentication, SessionAuthentication
@@ -103,7 +105,10 @@ def feeds(request):
     serializer = FeedSerializer(data=payload)
     if not serializer.is_valid():
         return error("VALIDATION_ERROR", "Feed data is invalid.", serializer.errors)
-    feed = serializer.save()
+    with transaction.atomic():
+        feed = serializer.save()
+        if feed.source_type in {SourceType.NETWORK.value, SourceType.WEBCAM.value}:
+            VisionJob.objects.create(feed=feed, configuration_version=feed.configuration_version)
     return Response(feed_data(feed), status=status.HTTP_201_CREATED)
 
 
@@ -182,12 +187,14 @@ def feed_detail(request, feed_id):
 
 @authenticated
 @api_view(["PUT"])
+@transaction.atomic
 def feed_calibration(request, feed_id):
     try:
-        feed = Feed.objects.get(id=feed_id)
+        feed = Feed.objects.select_for_update().get(id=feed_id)
     except Feed.DoesNotExist:
         return error("NOT_FOUND", "Feed was not found.", http_status=404)
     payload = request.data.copy()
+    new_zone = None
     if "reference_points" in payload:
         try:
             points = payload["reference_points"]
@@ -195,9 +202,11 @@ def feed_calibration(request, feed_id):
             length = float(payload["length_m"])
         except (KeyError, TypeError, ValueError):
             return error("CALIBRATION_INVALID", "Normalized points and dimensions are required.", http_status=422)
+        if not all(math.isfinite(n) and n > 0 for n in (width, length)):
+            return error("CALIBRATION_INVALID", "Ground dimensions must be positive and finite.", http_status=422)
         zone = feed.zones.filter(is_active=True).first()
         if zone is None:
-            zone = Zone.objects.create(
+            new_zone = zone = Zone(
                 feed=feed,
                 name=f"{feed.name} monitored zone",
                 polygon_image=points,
@@ -218,6 +227,8 @@ def feed_calibration(request, feed_id):
     expected = data.get("expected_configuration_version")
     if expected is not None and expected != feed.configuration_version:
         return error("VERSION_CONFLICT", "Feed configuration has changed.", http_status=409)
+    if new_zone:
+        new_zone.save()
     try:
         zone = feed.zones.get(id=data["zone_id"])
     except Zone.DoesNotExist:

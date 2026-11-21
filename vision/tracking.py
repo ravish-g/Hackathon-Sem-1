@@ -1,3 +1,5 @@
+import numpy as np
+
 from .types import Detections
 
 
@@ -25,7 +27,10 @@ class PerSourceTracker:
                 class_id=detections.class_id,
             )
             tracked = self._tracker.update(sv_detections)
-            detections.tracker_id = getattr(tracked, "tracker_id", None)
+            # Trackers can return a filtered or reordered subset. Only attach
+            # IDs when they refer to the exact detector rows used for counting.
+            if np.array_equal(tracked.xyxy, detections.xyxy):
+                detections.tracker_id = getattr(tracked, "tracker_id", None)
         except ImportError:
             detections.tracker_id = None
         return detections

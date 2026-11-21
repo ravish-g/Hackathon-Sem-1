@@ -239,3 +239,22 @@ def test_upload_creates_playable_preview(api):
     job = VisionJob.objects.get(feed_id=data["feed_id"])
     assert job.state == VisionJob.STATE_PENDING
     assert job.source_path.startswith("feeds/")
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("source_type,config", [
+    ("webcam", {"device_index": 0}), ("network", {"url": "rtsp://camera.example/feed"}),
+])
+def test_live_sources_enqueue_analysis(api, source_type, config):
+    result = api.post("/api/feeds/", {"name": "Camera", "location": "Test",
+                      "source_type": source_type, "source_config": config}, format="json")
+    assert result.status_code == 201
+    assert VisionJob.objects.get(feed_id=result.json()["feed_id"]).state == VisionJob.STATE_PENDING
+
+
+@pytest.mark.django_db
+def test_invalid_normalized_calibration_leaves_no_zone(api, feed):
+    result = api.put(f"/api/feeds/{feed.id}/calibration/", {
+        "width_m": 3, "length_m": 5, "reference_points": [[0, 0]] * 4,
+    }, format="json")
+    assert result.status_code == 422
+    assert not feed.zones.exists()

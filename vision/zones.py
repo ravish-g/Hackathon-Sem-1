@@ -63,7 +63,8 @@ def count_zone_occupants(
     for index, ground_point in enumerate(ground_points):
         if not zone.contains_ground_point(ground_point):
             continue
-        identity = int(tracker_ids[index]) if tracker_ids is not None and index < len(tracker_ids) else index
+        track_id = tracker_ids[index] if tracker_ids is not None and index < len(tracker_ids) else None
+        identity = int(track_id) if track_id is not None and track_id >= 0 else f"box-{index}"
         if identity not in unique_ids:
             unique_ids.add(identity)
             in_zone_count += 1
