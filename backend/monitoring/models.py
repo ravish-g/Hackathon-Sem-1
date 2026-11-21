@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 from .enums import (
     AnalysisState,
@@ -164,3 +165,12 @@ class EventLogEntry(models.Model):
     class Meta:
         ordering = ["-sequence"]
 
+
+class FeedActivity(models.Model):
+    """Operator actions retain their feed identity even after feed removal."""
+    event_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    feed_id = models.UUIDField(db_index=True)
+    feed_name = models.CharField(max_length=120)
+    event_type = models.CharField(max_length=80)
+    message = models.CharField(max_length=500)

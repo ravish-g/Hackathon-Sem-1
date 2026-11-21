@@ -257,6 +257,16 @@ def feed_calibration(request, feed_id):
 @authenticated
 @api_view(["GET"])
 def events(request):
+    if request.query_params.get("view") == "activity":
+        from .activity import recent_activity
+        kind = request.query_params.get("filter", "All")
+        if kind not in {"All", "System", "Alerts"}:
+            return error("INVALID_FILTER", "Unknown activity filter.")
+        try:
+            feed_id = uuid.UUID(request.query_params["feed_id"]) if request.query_params.get("feed_id") else None
+        except ValueError:
+            return error("INVALID_FEED", "Invalid feed ID.")
+        return Response({"results": recent_activity(kind, feed_id)})
     queryset = EventLogEntry.objects.select_related("feed").all()
     cursor = request.query_params.get("cursor")
     if cursor:

@@ -258,3 +258,21 @@ def test_invalid_normalized_calibration_leaves_no_zone(api, feed):
     }, format="json")
     assert result.status_code == 422
     assert not feed.zones.exists()
+
+@pytest.mark.django_db
+def test_operator_log_survives_refresh_and_feed_removal(api, feed):
+    from backend.monitoring.models import EventLogEntry
+
+    for sequence, (kind, category) in enumerate([
+        ("system.heartbeat", "system"), ("threshold_crossed", "crowd"),
+        ("incident.created", "incident"),
+    ], start=1):
+        EventLogEntry.objects.create(feed=feed, event_type=kind, category=category, sequence=sequence)
+    url = "/api/events/?view=activity"
+    assert [e["event_type"] for e in api.get(url + "&filter=Alerts").json()["results"]] == ["threshold_crossed"]
+    assert [e["event_type"] for e in api.get(url + "&filter=System").json()["results"]] == ["feed.added"]
+    assert api.delete(f"/api/feeds/{feed.pk}/").status_code == 204
+    history = api.get(url + "&filter=System").json()["results"]
+    assert [row["event_type"] for row in history] == ["feed.removed", "feed.added"]
+    assert all(row["feed_name"] == feed.name for row in history)
+    assert api.get(url + "&filter=System").json()["results"] == history

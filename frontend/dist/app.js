@@ -14,8 +14,31 @@ function eventLog(feed_id,severity,title,message,category='system',event_id=uniq
 function snapshot(s){
  UI.feeds=new Map((s.feeds||[]).filter(x=>x.feed_id).map(f=>[String(f.feed_id),{...f,feed_id:String(f.feed_id)}]));
  UI.incidents=new Map((s.incidents||s.active_incidents||[]).filter(i=>i.incident_id&&i.state==='active').map(i=>[i.incident_id,i]));
- UI.events=new Map((s.events||s.alerts||[]).filter(e=>e.event_id).map(e=>[e.event_id,e]));
+ if(s.events||s.alerts)UI.events=new Map((s.events||s.alerts||[]).filter(e=>e.event_id).map(e=>[e.event_id,e]));
  if(Number.isFinite(s.stale_timeout_seconds)&&s.stale_timeout_seconds>0)UI.staleAfter=s.stale_timeout_seconds;
+}
+let pendingActivity=null;
+async function refreshActivity(){
+ const adapter=UI.adapter;
+ if(UI.mode!=='live'||!adapter)return;
+ const params=new URLSearchParams({view:'activity',filter:UI.filter});
+ if(UI.route.startsWith('feed/'))params.set('feed_id',UI.route.slice(5));
+ const url='/api/events/?'+params;
+ if(pendingActivity?.adapter===adapter&&pendingActivity.url===url)return;
+ const request={adapter,url};
+ pendingActivity=request;
+ try {
+   const {results}=await adapter.call(url);
+   if(request!==pendingActivity||adapter!==UI.adapter)return;
+   UI.events=new Map(results.map(row=>[row.event_id,row]));
+   document.querySelectorAll('[data-history]').forEach(el=>{
+     el.innerHTML=A.events(el.dataset.history,UI.route==='overview');
+   });
+ } catch {
+   if(request===pendingActivity&&adapter===UI.adapter&&!UI.events.size){
+     document.querySelectorAll('[data-history]').forEach(el=>{el.textContent='Event history unavailable. Retrying…';});
+   }
+ } finally {if(pendingActivity===request)pendingActivity=null;}
 }
 function freeMedia(id){const f=UI.feeds.get(id);UI.streams.get(id)?.getTracks().forEach(t=>t.stop());UI.streams.delete(id);if(UI.objectUrls.delete(f?.preview_url))URL.revokeObjectURL(f.preview_url);}
 function switchData(){UI.adapter?.stop();UI.adapter=null;UI.feeds.forEach(f=>freeMedia(f.feed_id));UI.feeds.clear();UI.incidents.clear();UI.events.clear();}
@@ -123,11 +146,11 @@ function receive(e){const kind=e.type,body=e.payload||e,inc=body.incident||body,
  show();}
 function removeDialog(f){if(active().some(i=>i.feed_id===f.feed_id)){toast('This feed has an active critical incident.');return;}open('Remove camera feed',`<form class="form" id="remove-form"><p class="subtle">Remove ${esc(f.name)} from the control room and stop monitoring this source?</p>${footer('Remove feed')}</form>`);submitHandler($('#remove-form'),async()=>{if(UI.mode==='live')await UI.adapter.call(`/api/feeds/${freshId(f.feed_id)}/`,'DELETE');freeMedia(f.feed_id);UI.feeds.delete(f.feed_id);eventLog(f.feed_id,'info','Feed removed',f.name);dialog.close();location.hash='overview';});}
 const actions={overlay:()=>{UI.hideOverlay=!UI.hideOverlay;show();},fullscreen:async()=>{const frame=$('.detail-frame');if(frame?.requestFullscreen)await frame.requestFullscreen();else toast('Fullscreen is unavailable in this browser.');},close:()=>dialog.close(),stats:b=>b.closest('.card').classList.toggle('show-stats'),add:()=>locks().length?guard():addDialog(),settings:()=>locks().length?guard():settings(),calibrate:()=>calibration(UI.feeds.get(UI.route.slice(5))),remove:()=>removeDialog(UI.feeds.get(UI.route.slice(5))),retry:()=>{UI.feeds.get(UI.route.slice(5)).preview_failed=false;show();},'reset-points':()=>{calPoints=[];paintPoints();},scenario:async()=>{const resolved=active().length>0;await saveDemoState({resolved,acknowledged:false});show();if(!resolved){beep();$('#announcer').textContent='New sample critical incident at Main Gate';}toast(resolved?'Sample recovery confirmed. Main Gate unpinned.':'New sample incident at Main Gate.');}};
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.id==='audio')await audioToggle();else if(b.dataset.ack){b.disabled=true;try{await ack(b.dataset.ack);}finally{b.disabled=false;}}else if(b.dataset.action)await actions[b.dataset.action]?.(b);else if(b.dataset.layout){UI.layout=b.dataset.layout;show();}else if(b.dataset.filter){UI.filter=b.dataset.filter;show();}}catch(err){toast(err.message);}});
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.id==='audio')await audioToggle();else if(b.dataset.ack){b.disabled=true;try{await ack(b.dataset.ack);}finally{b.disabled=false;}}else if(b.dataset.action)await actions[b.dataset.action]?.(b);else if(b.dataset.layout){UI.layout=b.dataset.layout;show();}else if(b.dataset.filter){UI.filter=b.dataset.filter;show();refreshActivity();}}catch(err){toast(err.message);}});
 document.addEventListener('change',e=>{if(e.target.id==='sort'){UI.sort=e.target.value;show();}});
 document.addEventListener('error',e=>{const id=e.target.dataset?.media,f=UI.feeds.get(id);if(f&&!f.preview_failed){f.preview_failed=true;e.target.replaceWith(Object.assign(document.createElement('div'),{className:'fallback',textContent:'Preview unavailable'}));if(!f.fixture&&UI.mode==='demo')f.stream_state='error';}},true);
 document.addEventListener('loadeddata',e=>{const f=UI.feeds.get(e.target.dataset?.media);if(f&&UI.mode==='demo'&&f.stream_state==='connecting'){f.stream_state='live';if(!metricTimer)metricTimer=setTimeout(updateMetrics,100);}},true);
-window.addEventListener('hashchange',navigate);
+window.addEventListener('hashchange',()=>{navigate();refreshActivity();});
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a)return;const dest=decodeURIComponent(a.hash.slice(1));if(dest!==UI.route&&guarded(dest)){e.preventDefault();guard();}else if(dialog.open)dialog.close();});
 async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outerHTML=icon(el.dataset.i));UI.mode='live';
  try{
@@ -140,6 +163,8 @@ async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outer
    toast(error.message);
  }
  const route=readRoute();if(route==='overview'||!guarded(route))UI.route=route;else{history.replaceState(null,'','#overview');guard();}show();
+ refreshActivity();
+ setInterval(refreshActivity,5000);
  let refreshing=false;
  setInterval(async()=>{
    const adapter=UI.adapter;
