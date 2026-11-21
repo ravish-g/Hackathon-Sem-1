@@ -71,7 +71,7 @@ CSRF_TRUSTED_ORIGINS = [
         "http://127.0.0.1:5173,http://localhost:5173",
     ).split(",") if origin.strip()
 ]
-METRIC_STALE_SECONDS = int(os.getenv("METRIC_STALE_SECONDS", "15"))
+METRIC_STALE_SECONDS = int(os.getenv("METRIC_STALE_SECONDS", "1800"))
 CRITICAL_RECOVERY_SECONDS = int(os.getenv("CRITICAL_RECOVERY_SECONDS", "30"))
 
 REST_FRAMEWORK = {

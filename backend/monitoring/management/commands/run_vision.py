@@ -29,6 +29,7 @@ class Command(BaseCommand):
         detector = YoloPersonDetector(
             model_path=os.getenv("VISION_MODEL", "yolo11n.pt"),
             confidence=float(os.getenv("VISION_CONFIDENCE", "0.25")),
+            tile_size=int(os.getenv("VISION_TILE_SIZE", "640")),
             device=os.getenv("VISION_DEVICE", "cpu"),
         )
         telemetry_url = os.getenv("VISION_TELEMETRY_URL", "http://web:8000/internal/telemetry/")
@@ -43,10 +44,16 @@ class Command(BaseCommand):
             while True:
                 self._heartbeat(active, worker_id)
                 for job in VisionJob.objects.select_related("feed").filter(
-                    state=VisionJob.STATE_PENDING
+                    state__in=[
+                        VisionJob.STATE_PENDING,
+                        VisionJob.STATE_RUNNING,
+                        VisionJob.STATE_COMPLETED,
+                    ]
                 ).order_by("created_at"):
                     if len(active) >= max_feeds:
                         break
+                    if str(job.feed_id) in active:
+                        continue
                     if job.feed.source_type != "upload":
                         continue
                     if not job.source_path:
@@ -68,7 +75,7 @@ class Command(BaseCommand):
                             self._mark_error(job, "Uploaded MP4 contains no readable frame")
                             continue
                         calibration, zones = self._load_calibration(job.feed, frame.shape[1], frame.shape[0])
-                        reader = SourceReader(str(job.feed_id), str(source), None)
+                        reader = SourceReader(str(job.feed_id), str(source), None, loop=True)
                         processor = SourceProcessor(
                             str(job.feed_id),
                             detector,
