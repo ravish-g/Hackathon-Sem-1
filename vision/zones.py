@@ -38,6 +38,7 @@ class Zone:
 
 
 def foot_points(boxes: np.ndarray) -> np.ndarray:
+    """Use each box's bottom midpoint as an estimate of where the person meets the ground."""
     boxes = np.asarray(boxes, dtype=np.float32)
     if boxes.size == 0:
         return np.empty((0, 2), dtype=np.float32)
@@ -64,6 +65,8 @@ def count_zone_occupants(
         if not zone.contains_ground_point(ground_point):
             continue
         track_id = tracker_ids[index] if tracker_ids is not None and index < len(tracker_ids) else None
+        # A missing or negative ID can belong to several people in one frame.
+        # Give each untracked box its own key so those people are counted separately.
         identity = int(track_id) if track_id is not None and track_id >= 0 else f"box-{index}"
         if identity not in unique_ids:
             unique_ids.add(identity)
