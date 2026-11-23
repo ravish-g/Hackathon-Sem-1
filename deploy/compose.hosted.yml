@@ -1,0 +1,32 @@
+services:
+  web:
+    ports: !reset []
+    environment:
+      DJANGO_DEBUG: "false"
+      ALLOW_LOCAL_ANONYMOUS: "false"
+      HOSTED_DASHBOARD: "true"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,web,${PUBLIC_HOST:?Set PUBLIC_HOST}"
+      CSRF_TRUSTED_ORIGINS: "https://${PUBLIC_HOST}"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}"
+      WORKER_INGEST_TOKEN: "${WORKER_INGEST_TOKEN:?Set WORKER_INGEST_TOKEN}"
+  db:
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOST: "${PUBLIC_HOST}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+volumes:
+  caddy_data:
+  caddy_config:

@@ -14,8 +14,31 @@ function eventLog(feed_id,severity,title,message,category='system',event_id=uniq
 function snapshot(s){
  UI.feeds=new Map((s.feeds||[]).filter(x=>x.feed_id).map(f=>[String(f.feed_id),{...f,feed_id:String(f.feed_id)}]));
  UI.incidents=new Map((s.incidents||s.active_incidents||[]).filter(i=>i.incident_id&&i.state==='active').map(i=>[i.incident_id,i]));
- UI.events=new Map((s.events||s.alerts||[]).filter(e=>e.event_id).map(e=>[e.event_id,e]));
+ if(s.events||s.alerts)UI.events=new Map((s.events||s.alerts||[]).filter(e=>e.event_id).map(e=>[e.event_id,e]));
  if(Number.isFinite(s.stale_timeout_seconds)&&s.stale_timeout_seconds>0)UI.staleAfter=s.stale_timeout_seconds;
+}
+let pendingActivity=null;
+async function refreshActivity(){
+ const adapter=UI.adapter;
+ if(UI.mode!=='live'||!adapter)return;
+ const params=new URLSearchParams({view:'activity',filter:UI.filter});
+ if(UI.route.startsWith('feed/'))params.set('feed_id',UI.route.slice(5));
+ const url='/api/events/?'+params;
+ if(pendingActivity?.adapter===adapter&&pendingActivity.url===url)return;
+ const request={adapter,url};
+ pendingActivity=request;
+ try {
+   const {results}=await adapter.call(url);
+   if(request!==pendingActivity||adapter!==UI.adapter)return;
+   UI.events=new Map(results.map(row=>[row.event_id,row]));
+   document.querySelectorAll('[data-history]').forEach(el=>{
+     el.innerHTML=A.events(el.dataset.history,UI.route==='overview');
+   });
+ } catch {
+   if(request===pendingActivity&&adapter===UI.adapter&&!UI.events.size){
+     document.querySelectorAll('[data-history]').forEach(el=>{el.textContent='Event history unavailable. Retrying…';});
+   }
+ } finally {if(pendingActivity===request)pendingActivity=null;}
 }
 function freeMedia(id){const f=UI.feeds.get(id);UI.streams.get(id)?.getTracks().forEach(t=>t.stop());UI.streams.delete(id);if(UI.objectUrls.delete(f?.preview_url))URL.revokeObjectURL(f.preview_url);}
 function switchData(){UI.adapter?.stop();UI.adapter=null;UI.feeds.forEach(f=>freeMedia(f.feed_id));UI.feeds.clear();UI.incidents.clear();UI.events.clear();}
@@ -45,7 +68,7 @@ function addDialog(){
  let stream=null,inFlight=0;const stop=()=>{inFlight++;stream?.getTracks().forEach(t=>t.stop());stream=null;};
  open('Add camera feed',`<form class="form" id="source-form">${field('Feed name','<input name="name" placeholder="e.g. South Gate" required maxlength="70">')}${field('Zone or location','<input name="location" placeholder="e.g. South entrance" required maxlength="90">')}${field('Source type',`<select name="source"><option value="upload">Video file</option><option value="webcam">${UI.mode==='live'?'Processing-worker camera':'Browser webcam'}</option><option value="network">Network stream</option></select>`)}<div id="source-options"></div><div class="note">${UI.mode==='demo'?'Local sources support preview and zone setup. Connect the processing backend for person counting.':'The processing worker supplies count, density and inference measurements.'}</div>${footer('Add feed')}</form>`,stop);
  const form=$('#source-form'),opts=$('#source-options');
- function selection(){stop();opts.innerHTML=form.source.value==='upload'?field('Choose video','<input type="file" name="file" accept="video/*,.mp4,.webm,.mov" required>'):form.source.value==='network'?field(UI.mode==='live'?'Stream address (HTTP, HTTPS or RTSP)':'Browser-playable HTTP or HTTPS video URL','<input type="url" name="url" placeholder="https://camera.example/stream.mp4" required>'):UI.mode==='live'?field('Worker camera index','<input type="number" name="device" min="0" step="1" value="0" required>'):`<div class="form"><button type="button" id="startcam">${icon('cam')} Enable camera preview</button><select aria-label="Camera device" id="devices" hidden></select><video id="cam-preview" style="max-height:160px;width:100%" muted autoplay playsinline hidden></video></div>`;if($('#startcam')){$('#startcam').onclick=()=>startCam();$('#devices').onchange=()=>startCam($('#devices').value);}}
+ function selection(){stop();opts.innerHTML=form.source.value==='upload'?field('Choose video','<input type="file" name="file" accept=".mp4,.mov,.avi,.mkv" required>'):form.source.value==='network'?field(UI.mode==='live'?'Stream address (HTTP, HTTPS or RTSP)':'Browser-playable HTTP or HTTPS video URL','<input type="url" name="url" placeholder="https://camera.example/stream.mp4" required>'):UI.mode==='live'?field('Worker camera index','<input type="number" name="device" min="0" step="1" value="0" required>'):`<div class="form"><button type="button" id="startcam">${icon('cam')} Enable camera preview</button><select aria-label="Camera device" id="devices" hidden></select><video id="cam-preview" style="max-height:160px;width:100%" muted autoplay playsinline hidden></video></div>`;if($('#startcam')){$('#startcam').onclick=()=>startCam();$('#devices').onchange=()=>startCam($('#devices').value);}}
  async function startCam(device){stop();const token=inFlight;try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera access requires localhost or HTTPS and browser permission.');const next=await navigator.mediaDevices.getUserMedia({video:device?{deviceId:{exact:device}}:true,audio:false});if(token!==inFlight){next.getTracks().forEach(t=>t.stop());return;}stream=next;$('#cam-preview').srcObject=stream;$('#cam-preview').hidden=false;const list=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');if(token!==inFlight)return;$('#devices').innerHTML=list.map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||'Camera')}</option>`).join('');$('#devices').value=stream.getVideoTracks()[0].getSettings().deviceId||'';$('#devices').hidden=list.length<2;$('#startcam').textContent='Refresh camera preview';form.querySelector('.form-error').textContent='';}catch(e){if(token===inFlight)form.querySelector('.form-error').textContent='Camera access failed. '+e.message;}}
  selection();form.source.onchange=selection;
  submitHandler(form,async()=>{
@@ -79,13 +102,21 @@ function calibration(f){
  eventLog(f.feed_id,'info','Zone geometry saved',`${fmt(payload.zone_area_m2,2)} m² measured ground area.`,'calibration');dialog.close();show();toast('Zone geometry saved. Awaiting measurements.');});
 }
 function paintPoints(syncInput=true){$('#cal-overlay').innerHTML=`<polygon points="${calPoints.map(p=>p.map(v=>v*100).join(',')).join(' ')}" fill="#abef8338" stroke="#b5f48a" stroke-width=".5"/>${calPoints.map(([x,y],i)=>`<circle cx="${x*100}" cy="${y*100}" r="1.5" fill="#bbf792"/><text x="${x*100+2}" y="${y*100}" fill="white" font-size="4">${i+1}</text>`).join('')}`;if(syncInput)$('#coordinates').value=calPoints.map(p=>p.map(v=>v.toFixed(3)).join(',')).join(' ');$('#point-count').textContent=calPoints.length+' of 4 corners selected';}
-function settings(){open('Connection settings',`<form id="settings-form" class="form">${field('Monitoring source',`<select name="mode"><option value="demo">Demo workspace</option><option value="live">Live Django backend</option></select>`)}<div id="connection-fields"></div>${footer('Apply settings')}</form>`);const form=$('#settings-form');form.mode.value=UI.mode;
- const update=()=>{$('#connection-fields').innerHTML=form.mode.value==='live'?`<div class="form">${field('Backend origin',`<input type="url" name="origin" value="${esc(UI.adapter?.base||'')}" placeholder="https://monitor.example.edu" required>`)}<p class="subtle">Uses the dashboard REST snapshot and Django Channels event stream. The host must allow this origin and your signed-in session.</p></div>`:'<p class="note">Four sample camera frames illustrate a campus fest. Uploaded videos and webcam previews stay in this browser session.</p>';};update();form.mode.onchange=update;
- submitHandler(form,async()=>{if(form.mode.value==='demo'){if(UI.mode!=='demo'){localStorage.removeItem('antropy-backend');await startDemo();}dialog.close();return;}
- const adapter=new EntropyData.Django(form.origin.value,receive,setLiveStatus);let snap=await adapter.call('/api/dashboard/');if(!Array.isArray(snap.feeds))throw Error('The server must return a dashboard snapshot with a feeds array.');if(!Array.isArray(snap.incidents)&&!Array.isArray(snap.active_incidents))snap.incidents=await adapter.call('/api/incidents/active/');
- switchData();UI.mode='live';UI.adapter=adapter;snapshot(snap);localStorage.setItem('antropy-backend',adapter.base);dialog.close();UI.route='overview';history.replaceState(null,'','#overview');adapter.start();show();});}
+function settings(){open('Connection settings',`<form id="settings-form" class="form"><div class="form">${field('Backend origin',`<input type="url" name="origin" value="${esc(location.origin)}" required>`)}<p class="subtle">Live Django dashboard and Django Channels event stream.</p></div>${footer('Reconnect')}</form>`);
+ const form=$('#settings-form');
+ submitHandler(form,async()=>{
+   const adapter=new EntropyData.Django(form.origin.value,receive,setLiveStatus);
+   let snap=await adapter.call('/api/dashboard/');
+   if(!Array.isArray(snap.feeds))throw Error('The server must return a dashboard snapshot with a feeds array.');
+   if(!Array.isArray(snap.incidents)&&!Array.isArray(snap.active_incidents))snap.incidents=await adapter.call('/api/incidents/active/');
+   switchData();UI.mode='live';UI.adapter=adapter;snapshot(snap);localStorage.setItem('antropy-backend',adapter.base);dialog.close();UI.route='overview';history.replaceState(null,'','#overview');adapter.start();show();
+ });}
 function setLiveStatus(s){setStatus(s);show();}
 function updateMetrics(){metricTimer=null;if(UI.route.startsWith('feed/')){const f=UI.feeds.get(UI.route.slice(5));if(!f)return;const frame=$('.detail-frame');if(!frame)return;
+ if(f.preview_transport==='image' && !f.fixture && f.preview_url){
+   const media=frame.querySelector('[data-media],.fallback');
+   if(media)media.outerHTML=markupMedia(f);
+ }
  const metrics=frame.parentElement.querySelector('.details-grid');
  metrics.innerHTML=A.detailStats(f).map(pair=>A.metric(...pair)).join('');
  const badge=frame.parentElement.querySelector('.split .tag');if(badge)badge.outerHTML=A.tag(sev(f));
@@ -95,7 +126,12 @@ function updateMetrics(){metricTimer=null;if(UI.route.startsWith('feed/')){const
  return;}
  if(UI.route!=='overview'){if(UI.route==='diagnostics')show();return;}const strip=$('.kpis');if(strip)strip.innerHTML=kpis();const grid=$('.feed-grid');if(!grid)return;
  const byId=new Map([...grid.querySelectorAll('[data-card]')].map(el=>[el.dataset.card,el]));
- for(const f of UI.feeds.values()){const el=byId.get(f.feed_id);if(!el)continue;el.className='card '+sev(f);el.querySelector('.stats-band').outerHTML=band(f);el.querySelector('.peek').innerHTML=peek(f);el.querySelector('.cam-labels').outerHTML=signal(f).split('<div class="frame-bottom">')[0];el.querySelector('.frame-bottom').innerHTML=`<span class="stamp"><i class="dot"></i>${esc(A.stream(f).toUpperCase())}</span><span class="stamp">${time(f.metric_timestamp)}</span>`;}
+ for(const f of UI.feeds.values()){const el=byId.get(f.feed_id);if(!el)continue;
+ if(f.preview_transport==='image' && !f.fixture && f.preview_url){
+   const media=el.querySelector('[data-media],.fallback');
+   if(media)media.outerHTML=markupMedia(f);
+ }
+ el.className='card '+sev(f);el.querySelector('.stats-band').outerHTML=band(f);el.querySelector('.peek').innerHTML=peek(f);el.querySelector('.cam-labels').outerHTML=signal(f).split('<div class="frame-bottom">')[0];el.querySelector('.frame-bottom').innerHTML=`<span class="stamp"><i class="dot"></i>${esc(A.stream(f).toUpperCase())}</span><span class="stamp">${time(f.metric_timestamp)}</span>`;}
  if(Date.now()-UI.lastOrder>5000&&!grid.contains(document.activeElement)&&!grid.matches(':hover')){UI.lastOrder=Date.now();sortFeeds().forEach((f,i)=>{const el=byId.get(f.feed_id);if(el&&grid.children[i]!==el)grid.insertBefore(el,grid.children[i]||null);});}}
 function receive(e){const kind=e.type,body=e.payload||e,inc=body.incident||body,fid=body.feed_id||body.feed?.feed_id||inc.feed_id;
  if(kind==='dashboard.snapshot')snapshot(body.snapshot||body);
@@ -110,16 +146,41 @@ function receive(e){const kind=e.type,body=e.payload||e,inc=body.incident||body,
  show();}
 function removeDialog(f){if(active().some(i=>i.feed_id===f.feed_id)){toast('This feed has an active critical incident.');return;}open('Remove camera feed',`<form class="form" id="remove-form"><p class="subtle">Remove ${esc(f.name)} from the control room and stop monitoring this source?</p>${footer('Remove feed')}</form>`);submitHandler($('#remove-form'),async()=>{if(UI.mode==='live')await UI.adapter.call(`/api/feeds/${freshId(f.feed_id)}/`,'DELETE');freeMedia(f.feed_id);UI.feeds.delete(f.feed_id);eventLog(f.feed_id,'info','Feed removed',f.name);dialog.close();location.hash='overview';});}
 const actions={overlay:()=>{UI.hideOverlay=!UI.hideOverlay;show();},fullscreen:async()=>{const frame=$('.detail-frame');if(frame?.requestFullscreen)await frame.requestFullscreen();else toast('Fullscreen is unavailable in this browser.');},close:()=>dialog.close(),stats:b=>b.closest('.card').classList.toggle('show-stats'),add:()=>locks().length?guard():addDialog(),settings:()=>locks().length?guard():settings(),calibrate:()=>calibration(UI.feeds.get(UI.route.slice(5))),remove:()=>removeDialog(UI.feeds.get(UI.route.slice(5))),retry:()=>{UI.feeds.get(UI.route.slice(5)).preview_failed=false;show();},'reset-points':()=>{calPoints=[];paintPoints();},scenario:async()=>{const resolved=active().length>0;await saveDemoState({resolved,acknowledged:false});show();if(!resolved){beep();$('#announcer').textContent='New sample critical incident at Main Gate';}toast(resolved?'Sample recovery confirmed. Main Gate unpinned.':'New sample incident at Main Gate.');}};
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.id==='audio')await audioToggle();else if(b.dataset.ack){b.disabled=true;try{await ack(b.dataset.ack);}finally{b.disabled=false;}}else if(b.dataset.action)await actions[b.dataset.action]?.(b);else if(b.dataset.layout){UI.layout=b.dataset.layout;show();}else if(b.dataset.filter){UI.filter=b.dataset.filter;show();}}catch(err){toast(err.message);}});
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.id==='audio')await audioToggle();else if(b.dataset.ack){b.disabled=true;try{await ack(b.dataset.ack);}finally{b.disabled=false;}}else if(b.dataset.action)await actions[b.dataset.action]?.(b);else if(b.dataset.layout){UI.layout=b.dataset.layout;show();}else if(b.dataset.filter){UI.filter=b.dataset.filter;show();refreshActivity();}}catch(err){toast(err.message);}});
 document.addEventListener('change',e=>{if(e.target.id==='sort'){UI.sort=e.target.value;show();}});
 document.addEventListener('error',e=>{const id=e.target.dataset?.media,f=UI.feeds.get(id);if(f&&!f.preview_failed){f.preview_failed=true;e.target.replaceWith(Object.assign(document.createElement('div'),{className:'fallback',textContent:'Preview unavailable'}));if(!f.fixture&&UI.mode==='demo')f.stream_state='error';}},true);
 document.addEventListener('loadeddata',e=>{const f=UI.feeds.get(e.target.dataset?.media);if(f&&UI.mode==='demo'&&f.stream_state==='connecting'){f.stream_state='live';if(!metricTimer)metricTimer=setTimeout(updateMetrics,100);}},true);
-window.addEventListener('hashchange',navigate);
+window.addEventListener('hashchange',()=>{navigate();refreshActivity();});
 document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a)return;const dest=decodeURIComponent(a.hash.slice(1));if(dest!==UI.route&&guarded(dest)){e.preventDefault();guard();}else if(dialog.open)dialog.close();});
-async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outerHTML=icon(el.dataset.i));if('BroadcastChannel' in window){channel=new BroadcastChannel('entropy-demo');channel.onmessage=e=>{if(UI.mode==='demo'){applyDemoRecord(e.data);show();}};}
- let origin;try{origin=localStorage.getItem('antropy-backend');}catch{}if(origin){try{UI.adapter=new EntropyData.Django(origin,receive,setLiveStatus);UI.mode='live';UI.adapter.start();}catch{await startDemo();}}else await startDemo();
+async function init(){document.querySelectorAll('[data-i]').forEach(el=>el.outerHTML=icon(el.dataset.i));UI.mode='live';
+ try{
+   UI.adapter=new EntropyData.Django(location.origin,receive,setLiveStatus);
+   const snap=await UI.adapter.call('/api/dashboard/');
+   snapshot(snap);localStorage.setItem('antropy-backend',location.origin);UI.adapter.start();
+ }catch(error){
+   setStatus('Disconnected');
+   snapshot({feeds:[],active_incidents:[],events:[]});
+   toast(error.message);
+ }
  const route=readRoute();if(route==='overview'||!guarded(route))UI.route=route;else{history.replaceState(null,'','#overview');guard();}show();
- setInterval(()=>{if(UI.mode==='live'&&!metricTimer&&UI.route==='overview')updateMetrics();},5000);
+ refreshActivity();
+ setInterval(refreshActivity,5000);
+ let refreshing=false;
+ setInterval(async()=>{
+   const adapter=UI.adapter;
+   if(UI.mode!=='live'||!adapter||refreshing)return;
+   refreshing=true;
+   try {
+     const {results}=await adapter.call('/api/feeds/');
+     if(adapter!==UI.adapter)return;
+     for(const feed of results){
+       const current=UI.feeds.get(feed.feed_id);
+       if(current)Object.assign(current,feed);
+     }
+     updateMetrics();
+   } catch { /* Keep the latest sample while reconnecting. */ }
+   finally {refreshing=false;}
+ },5000);
 }
 init();
 })();

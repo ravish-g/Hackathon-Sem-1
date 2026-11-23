@@ -1,0 +1,14 @@
+Django>=5.2,<6
+djangorestframework>=3.16,<4
+channels>=4.2,<5
+daphne>=4.2,<5
+numpy>=2.0,<3
+opencv-python>=4.10,<5
+ultralytics>=8.3,<9
+supervision>=0.27,<1
+pytest>=8.0,<9
+pytest-django>=4.9,<5
+dj-database-url>=3.0,<4
+channels-redis>=4.2,<5
+psycopg[binary]>=3.2,<4
+
